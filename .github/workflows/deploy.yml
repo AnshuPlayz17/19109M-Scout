@@ -1,0 +1,42 @@
+# Publishes the scouting website and its database rules to Firebase.
+# The project is set in .firebaserc and the web settings in web/firebase-config.js.
+name: Scout deploy
+
+on:
+  push:
+    branches: [main]
+    paths: ["web/**", "firestore.rules", "firebase.json"]
+  workflow_dispatch:
+
+concurrency:
+  group: scout-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check secrets
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -z "$FIREBASE_SERVICE_ACCOUNT" ]; then
+            echo "::error::Missing repository secret: FIREBASE_SERVICE_ACCOUNT. Add it under Settings → Secrets and variables → Actions (steps in README.md)."
+            exit 1
+          fi
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Write credentials
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/sa.json"
+      - name: Stamp the app version
+        # A new version string makes phones show "Update ready" after this deploy.
+        run: sed -i "s/__VERSION__/${GITHUB_SHA::12}-${GITHUB_RUN_NUMBER}/" web/sw.js
+      - name: Deploy
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+        run: npx --yes firebase-tools@15 deploy --only hosting,firestore:rules --non-interactive

@@ -1,0 +1,11 @@
+{
+  "team": "19109M",
+  "programId": 1,
+  "region": "Ontario",
+  "quickDaysAhead": 21,
+  "quickDaysAfterEnd": 2,
+  "fullStatsMinutes": 12,
+  "aiNotesPerRun": 150,
+  "liveSeconds": 20,
+  "liveMinutes": 56
+}

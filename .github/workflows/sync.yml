@@ -1,0 +1,56 @@
+# Pulls RobotEvents data into the scouting app. This repo is public, so Actions minutes are free.
+name: Scout sync
+
+on:
+  schedule:
+    - cron: "41 * * * *"   # hourly; while one of our events is live it stays on and updates every 20 s
+    - cron: "17 7 * * *"   # nightly full refresh (3am Toronto)
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "quick or full"
+        default: full
+        type: choice
+        options: [quick, full]
+
+concurrency:
+  group: scout-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    defaults:
+      run:
+        working-directory: sync
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check secrets
+        working-directory: .
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          ROBOTEVENTS_TOKEN: ${{ secrets.ROBOTEVENTS_TOKEN }}
+          TEAM_JOIN_CODE: ${{ secrets.TEAM_JOIN_CODE }}
+        run: |
+          missing=""
+          for n in FIREBASE_SERVICE_ACCOUNT ROBOTEVENTS_TOKEN TEAM_JOIN_CODE; do [ -z "${!n}" ] && missing="$missing $n"; done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing. Add them under Settings → Secrets and variables → Actions (steps in README.md)."
+            exit 1
+          fi
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: sync/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+      - name: Sync
+        run: node sync.mjs
+        env:
+          SYNC_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || github.event.schedule == '17 7 * * *' && 'full' || 'quick' }}
+          ROBOTEVENTS_TOKEN: ${{ secrets.ROBOTEVENTS_TOKEN }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          TEAM_JOIN_CODE: ${{ secrets.TEAM_JOIN_CODE }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
