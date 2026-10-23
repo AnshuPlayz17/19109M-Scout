@@ -35,6 +35,14 @@ const db = (() => {
 const API = process.env.ROBOTEVENTS_API || "https://events.vex.com/api/v2/";
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let requests = 0;
+// One shared queue for every request, so calls made in parallel still stay under the
+// ~100 requests/minute limit, and a rate-limit pause holds all of them.
+let nextSlot = 0;
+async function slot() {
+  const t = Math.max(Date.now(), nextSlot);
+  nextSlot = t + 650;
+  await sleep(t - Date.now());
+}
 
 async function get(path, params = {}) {
   const url = new URL(path, API);
@@ -42,13 +50,13 @@ async function get(path, params = {}) {
     for (const item of [].concat(v)) url.searchParams.append(Array.isArray(v) ? `${k}[]` : k, item);
   }
   for (let attempt = 0; ; attempt++) {
-    await sleep(650); // stay under the ~100 requests/minute limit
+    await slot();
     requests++;
     const res = await fetch(url, { headers: { Authorization: `Bearer ${process.env.ROBOTEVENTS_TOKEN}`, Accept: "application/json" } });
     if (res.ok) return res.json();
     if ((res.status === 403 || res.status === 429 || res.status >= 500) && attempt < 4) {
       console.log(`  ${res.status} on ${url.pathname}, waiting a minute`);
-      await sleep(61e3);
+      nextSlot = Math.max(nextSlot, Date.now() + 61e3);
       continue;
     }
     throw new Error(`${res.status} ${res.statusText} for ${url.pathname}${url.search}`);
@@ -403,7 +411,8 @@ async function full() {
   let done = 0;
   for (const t of queue) {
     if (Date.now() > deadline) break;
-    await syncTeamStats(t.id, t.number, ctx.season.id);
+    try { await syncTeamStats(t.id, t.number, ctx.season.id); }
+    catch (err) { console.log(`  Stopping season stats early: ${err.message}`); break; } // the rest catch up tomorrow
     done++;
   }
   console.log(`Season stats for ${done}/${queue.length} teams`);
