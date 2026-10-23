@@ -214,6 +214,14 @@ function teamInfo(n) {
   return S.index.teams?.find(t => t.number === n) || null;
 }
 
+/** Under the match name: Won / Lost / Tie for our matches, Final for others, else the start time. */
+function result(m, won) {
+  if (!m.scored) return h("span", {}, fmtTime(m.scheduled) || "");
+  const ours = m.red.teams.includes(us()) ? "red" : m.blue.teams.includes(us()) ? "blue" : null;
+  if (won === "tie") return h("span", {}, "Tie");
+  if (!ours) return h("span", {}, "Final");
+  return h("span", { class: won === ours ? "res won" : "res lost" }, won === ours ? "Won" : "Lost");
+}
 /** One match as a scoreboard row: name and time, red and blue teams, scores or win chances. */
 function matchRow(ev, m, { foot, mark = true } = {}) {
   const mine = m.red.teams.includes(us()) || m.blue.teams.includes(us());
@@ -223,7 +231,7 @@ function matchRow(ev, m, { foot, mark = true } = {}) {
     m.scored ? h("span", { class: `sc${won && won !== c ? " lose" : ""}` }, m[c].score)
       : p !== undefined ? h("span", { class: "pc" }, pct(c === "red" ? p : 1 - p)) : h("span", {}));
   return h("a", { class: `mrow${mark && mine ? " mine" : ""}`, href: `#/match/${ev.id}/${m.id}` },
-    h("div", { class: "mname", title: m.name }, h("b", {}, shortName(m.name)), h("span", {}, m.scored ? (won === "tie" ? "Tie" : "Final") : fmtTime(m.scheduled) || "")),
+    h("div", { class: "mname", title: m.name }, h("b", {}, shortName(m.name)), result(m, won)),
     h("div", { class: "sides" }, side_("red"), side_("blue"), foot ? h("div", { class: "mfoot" }, foot) : null));
 }
 const matchList = (ev, list, opts) => h("div", { class: "mlist" }, list.map(m => matchRow(ev, m, opts)));
@@ -264,13 +272,8 @@ function pickTeam({ title, teams, onPick }) {
 const views = {};
 
 views.home = () => {
-  const fe0 = S.status ? focusEvent() : null;
-  const rk = fe0 && S.events[fe0.id]?.rankings?.find(x => x.team === us());
-  const out = [h("header", { class: "teamhead" },
-    h("div", {}, h("h1", {}, S.status?.team?.number || "19109M"), h("p", {}, S.status?.team?.name || "UTS Circuit Breakers")),
-    fe0 ? h("a", { class: `now${isLive(fe0) ? " live" : ""}`, href: `#/event/${fe0.id}` }, h("span", {}, isLive(fe0) ? "Live now" : ms(fe0.start) > Date.now() ? `Next event, ${until(fe0.start)}` : "Last event"),
-      h("b", {}, fe0.name), h("span", {}, rk ? `Rank #${rk.rank} · ${rk.wins}-${rk.losses}-${rk.ties}` : [fmtDates(fe0), where_(fe0)].filter(Boolean).join(" · "))) : null)];
-  if (S.status === undefined) return [...out, ...skeleton(200, 64, 160)];
+  const out = [h("header", { class: "teamhead" }, h("h1", {}, S.status?.team?.number || "19109M"), h("p", {}, S.status?.team?.name || "UTS Circuit Breakers"))];
+  if (S.status === undefined) return [...out, ...skeleton(150, 200, 160)];
   if (S.status === null) {
     out.push(notice("On GitHub, open Actions → Scout sync → Run workflow, mode full. Your events show up here when it finishes.", "Waiting for the first data sync", "refresh"));
     return out;
@@ -278,12 +281,24 @@ views.home = () => {
   const left = [], right = [];
   const fe = focusEvent();
   const ev = fe && S.events[fe.id];
-  if (fe && ev === undefined) left.push(...skeleton(200, 64));
-  if (fe && ev !== undefined) {
-    const next = ev?.ourMatches?.map(om => ({ om, m: ev.matches.find(x => x.id === om.id) })).find(x => x.m && !x.m.scored);
-    if (next) {
-      const { om, m } = next;
-      const who = (n, sub) => h("span", { class: "who" }, h("b", { class: n === us() ? "red-t" : null }, n), h("span", {}, sub || teamName(n) || " "));
+
+  // The event that matters now, with where we stand at it.
+  if (fe) {
+    const live = isLive(fe), r = ev?.rankings?.find(x => x.team === us()), o = ev?.oprs?.[us()];
+    const status = live ? "Live now" : ms(fe.start) > Date.now() ? `Next event · ${until(fe.start)}` : "Last event";
+    out.push(h("a", { class: `evcard${live ? " live" : ""}`, href: `#/event/${fe.id}` },
+      h("div", { class: "evtop" }, h("span", { class: "status" }, status), icon("chev", "chev")),
+      h("h2", {}, fe.name),
+      h("p", {}, [fmtDates(fe), where_(fe), ev?.teams?.length ? `${ev.teams.length} teams` : null].filter(Boolean).join(" · ")),
+      r ? glance([[`#${r.rank}`, "Rank", "accent"], [`${r.wins}-${r.losses}-${r.ties}`, "Record"], [r.wp, "WP"], [o?.matches >= 3 ? Math.round(o.opr) : "–", "OPR"]]) : null));
+  }
+  if (fe && ev === undefined) left.push(...skeleton(200, 160));
+  if (ev?.ourMatches?.length) {
+    const ours = ev.ourMatches.map(om => ({ om, m: ev.matches.find(x => x.id === om.id) })).filter(x => x.m);
+    const todo = ours.filter(x => !x.m.scored), done = ours.filter(x => x.m.scored).reverse();
+    if (todo.length) {
+      const { om, m } = todo[0];
+      const who = (n, sub) => h("span", { class: "who" }, h("b", { class: n === us() ? "us-t" : null }, n), h("span", {}, sub || teamName(n) || " "));
       left.push(section("Next match"), h("a", { class: `next ${om.color}`, href: `#/match/${ev.id}/${m.id}` },
         h("div", { class: "row between", style: "flex-wrap:nowrap;align-items:flex-start" },
           h("div", { style: "display:flex;flex-direction:column;gap:4px;min-width:0" },
@@ -294,23 +309,18 @@ views.home = () => {
         h("div", { class: "vs" },
           h("div", {}, h("span", { class: "eyebrow" }, "With"), who(us(), "Us"), om.partners.map(n => who(n))),
           h("div", {}, h("span", { class: "eyebrow" }, "Against"), om.opponents.map(n => who(n))))));
-    } // with no match to play, the event card at the top says where we are
-    const r = ev?.rankings?.find(x => x.team === us());
-    if (r) {
-      const o = ev.oprs?.[us()];
-      left.push(glance([[`#${r.rank}`, "Rank", "accent"], [`${r.wins}-${r.losses}-${r.ties}`, "Record"], [r.wp, "WP"], [o?.matches >= 3 ? Math.round(o.opr) : "–", "OPR"]]));
     }
-    if (ev?.ourMatches?.length) {
-      const rows = ev.ourMatches.map(om => ev.matches.find(x => x.id === om.id)).filter(Boolean);
-      const firstUnplayed = Math.max(0, rows.findIndex(m => !m.scored));
-      left.push(section("Our matches", h("a", { href: `#/event/${ev.id}/ours` }, "See all")),
-        matchList(ev, rows.slice(firstUnplayed).concat(rows.slice(0, firstUnplayed).reverse()).slice(0, 5), { mark: false }));
-    }
+    const all = h("a", { href: `#/event/${ev.id}/ours` }, "See all");
+    if (todo.length > 1) left.push(section("Coming up", all), matchList(ev, todo.slice(1, 4).map(x => x.m), { mark: false }));
+    if (done.length) left.push(section("Results", todo.length > 1 ? null : all), matchList(ev, done.slice(0, 4).map(x => x.m), { mark: false }));
   }
-  const qa = (href, ic, label) => h("a", { class: "qa", href }, icon(ic), label);
-  right.push(h("div", { class: "quick" }, qa("#/checklist", "checklist", "Checklist"), qa("#/scorer", "scorer", "Scorer"), qa("#/predict", "predict", "Predictor"), qa("#/autos", "autos", "Autos")));
+
+  const tool = (href, ic, label, sub) => h("a", { class: "tool", href }, h("span", { class: "tico" }, icon(ic)), h("span", { class: "tx" }, h("b", {}, label), h("span", {}, sub)));
+  right.push(h("div", { class: "tools" },
+    tool("#/checklist", "checklist", "Checklist", "Before each match"), tool("#/scorer", "scorer", "Scorer", "Timer and points"),
+    tool("#/predict", "predict", "Predictor", "Any four teams"), tool("#/autos", "autos", "Autos", "Our routes")));
   right.push(section("Our events", h("a", { href: "#/events" }, "All events")), group(...ourEvents().map(eventRow)));
-  right.push(h("p", { class: "footnote" }, `${S.status.season?.name || ""} · updated ${ago(S.status.lastQuick)}`));
+  right.push(h("p", { class: "footnote" }, fe && isLive(fe) ? `Live: checking for new results every 5 seconds · ${S.status.season?.name || ""}` : `${S.status.season?.name || ""} · updated ${ago(S.status.lastQuick)}`));
   return [...out, h("div", { class: "cols" }, h("div", { class: "col" }, ...left), h("div", { class: "col" }, ...right))];
 };
 
