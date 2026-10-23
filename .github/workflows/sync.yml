@@ -3,7 +3,7 @@ name: Scout sync
 
 on:
   schedule:
-    - cron: "41 * * * *"   # hourly; while one of our events is live it stays on and updates every 5 s
+    - cron: "41 * * * *"   # hourly backup; normally each run starts the next one (always on, every 5 s)
     - cron: "17 7 * * *"   # nightly full refresh (3am Toronto)
   workflow_dispatch:
     inputs:
@@ -25,7 +25,13 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # Always on (config.json alwaysOn): a run checks every 5 s for just under 6 hours (GitHub's
+    # job limit), then the last step starts the next run. The hourly schedule is the backup;
+    # a queued backup run that's no longer needed shows as cancelled, which is harmless.
+    timeout-minutes: 355
+    permissions:
+      contents: read
+      actions: write
     defaults:
       run:
         working-directory: sync
@@ -60,3 +66,12 @@ jobs:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           TEAM_JOIN_CODE: ${{ secrets.TEAM_JOIN_CODE }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      - name: Start the next run (always on)
+        if: success()
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if node -e "process.exit(JSON.parse(require('fs').readFileSync('config.json', 'utf8')).alwaysOn ? 0 : 1)"; then
+            gh workflow run sync.yml --ref "${{ github.ref_name }}" -f mode=quick -f game=override
+          fi

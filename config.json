@@ -10,5 +10,7 @@
   "aiNotesPerRun": 150,
   "liveSeconds": 5,
   "liveFullSeconds": 60,
-  "liveMinutes": 70
+  "liveMinutes": 70,
+  "alwaysOn": true,
+  "runMinutes": 340
 }

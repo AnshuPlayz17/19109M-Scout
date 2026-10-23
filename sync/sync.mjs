@@ -353,67 +353,106 @@ async function writeStatus(ctx, extra) {
   await db.doc(G.status).set({
     season: ctx.season, team: ctx.team,
     ourEvents: ctx.events.map(compactEvent),
+    alwaysOn: G.key === "override" && !!config.alwaysOn, // the app says "every 5 seconds" when on
     ...extra,
   }, { merge: true });
 }
 
 async function quick() {
-  const ctx = await context();
+  let ctx = await context();
+  const liveAtStart = ctx.events.some(e => liveNow(e, Date.now()));
   // GitHub sometimes skips scheduled runs, nightly full refresh included. If the last full
-  // refresh is over a day old and none of our events is live, do one now instead.
+  // refresh is over a day old and none of our events is live, do one now.
   const lastFull = (await db.doc("meta/status").get()).get("lastFull")?.toMillis?.() || 0;
-  if (Date.now() - lastFull > config.fullEveryHours * 3600e3 && !ctx.events.some(e => liveNow(e, Date.now()))) {
+  if (Date.now() - lastFull > config.fullEveryHours * 3600e3 && !liveAtStart) {
     console.log(`Last full refresh ${lastFull ? `${Math.round((Date.now() - lastFull) / 3600e3)} h ago` : "never"}; doing one now`);
     await full();
-    return pastSeason({ wasLive: false });
   }
-  const active = ctx.events.filter(e => ms(e.start) - now < config.quickDaysAhead * DAY && now - ms(e.end) < config.quickDaysAfterEnd * DAY);
-  for (const e of active) await syncEvent(e, { ours: true, ourNumber: ctx.team.number });
-  // Other events someone opened in the app, while they're running.
-  const watched = await db.collection("watch").get();
-  for (const w of watched.docs) {
-    if (active.some(e => String(e.id) === w.id)) continue;
-    const end = ms(w.get("end"));
-    if (end && now - end > config.quickDaysAfterEnd * DAY) { await w.ref.delete(); continue; }
-    await syncEvent({ id: Number(w.id) }, { ours: false, ourNumber: ctx.team.number });
-  }
+  ctx.active = ctx.events.filter(e => ms(e.start) - now < config.quickDaysAhead * DAY && now - ms(e.end) < config.quickDaysAfterEnd * DAY);
+  for (const e of ctx.active) await syncEvent(e, { ours: true, ourNumber: ctx.team.number });
+  ctx.watched = await watchedEvents(ctx);
+  for (const e of ctx.watched) await syncEvent(e, { ours: false, ourNumber: ctx.team.number });
   await handleRequests(ctx);
   await writeStatus(ctx, { lastQuick: FieldValue.serverTimestamp() });
-  const wasLive = await live(ctx);
-  await pastSeason({ wasLive });
+  if (!liveAtStart) await pastSeason({ wasLive: false }); // weekly Push Back refresh, before the long loop
+  await live(ctx);
+}
+
+/** Other events someone opened in the app, while they're on (drops ones that ended). */
+async function watchedEvents(ctx) {
+  const out = [];
+  for (const w of (await db.collection("watch").get()).docs) {
+    if (ctx.active?.some(e => String(e.id) === w.id)) continue;
+    const end = ms(w.get("end"));
+    if (end && Date.now() - end > config.quickDaysAfterEnd * DAY) { await w.ref.delete(); continue; }
+    out.push({ id: Number(w.id) });
+  }
+  return out;
 }
 
 /**
- * Live mode: while one of our events is running, keep this job going and re-check our
- * division's matches and rankings every few seconds (config.liveSeconds). Everything else
- * (teams, skills, other divisions) is re-read every config.liveFullSeconds. Writes only
- * happen when something changed, and phones pick them up the moment they land.
- * Runs a little past the next hourly start; that run waits for this one, then carries on.
+ * The 5-second loop. While one of our events is running it re-checks that event's division
+ * every config.liveSeconds; teams, skills and other divisions are re-read every
+ * config.liveFullSeconds. With config.alwaysOn it keeps going when nothing is live, checking
+ * our upcoming events (and events opened in the app) one per round, so the app is never more
+ * than a few seconds behind. Lookups from the app are answered as soon as they're asked
+ * (a listener, not polling, so it costs no database reads while idle). Writes happen only when
+ * something changed. The run ends a little before GitHub's 6-hour limit (config.runMinutes);
+ * the workflow then starts the next one.
  */
 async function live(ctx) {
-  const deadline = Date.now() + config.liveMinutes * 60e3;
+  const deadline = config.alwaysOn ? now + config.runMinutes * 60e3 : Date.now() + config.liveMinutes * 60e3;
   const sigs = {}, seasons = {}, cache = {};
-  let rounds = 0, chores = Date.now();
-  while (Date.now() < deadline) {
-    const t = Date.now();
-    const running = ctx.events.filter(e => liveNow(e, t));
-    if (!running.length) break;
-    if (!rounds) console.log(`Live mode for ${running.map(e => e.sku).join(", ")}`);
-    for (const e of running) {
-      try {
-        const fresh = cache[e.id] && t - cache[e.id].at < config.liveFullSeconds * 1000;
-        const r = await syncEvent(e, { ours: true, ourNumber: ctx.team.number, season: seasons[e.id], lastSig: sigs[e.id], reuse: fresh ? cache[e.id].parts : null });
-        seasons[e.id] = r.season; sigs[e.id] = r.sig;
-        if (!fresh) cache[e.id] = { parts: r.parts, at: t };
-        if (!r.unchanged && rounds) console.log(`  ${new Date().toISOString().slice(11, 19)} ${e.sku} updated`);
-      } catch (err) { console.log(`  live ${e.sku}: ${err.message}`); }
+  let rounds = 0, chores = Date.now(), refreshed = Date.now(), turn = 0, asked = true, wasLive = false;
+  const unsub = db.collection("requests").onSnapshot(snap => { if (!snap.empty) asked = true; }, err => console.log(`  request listener: ${err.message}`));
+  try {
+    while (Date.now() < deadline) {
+      const t = Date.now();
+      const running = ctx.events.filter(e => liveNow(e, t));
+      if (!running.length && !config.alwaysOn) break;
+      if (running.length && !wasLive) console.log(`Live mode for ${running.map(e => e.sku).join(", ")}`);
+      if (!running.length && (wasLive || !rounds)) console.log("Always on: checking our events every few seconds");
+      wasLive = running.length > 0;
+      const others = [...(ctx.active || []), ...(ctx.watched || [])];
+      const targets = running.length ? running : others.length ? [others[turn++ % others.length]] : [];
+      for (const e of targets) {
+        const ours = !ctx.watched?.includes(e);
+        try {
+          const fresh = cache[e.id] && t - cache[e.id].at < config.liveFullSeconds * 1000;
+          const r = await syncEvent(e, { ours, ourNumber: ctx.team.number, season: seasons[e.id], lastSig: sigs[e.id], reuse: fresh ? cache[e.id].parts : null });
+          seasons[e.id] = r.season; sigs[e.id] = r.sig;
+          if (!fresh) cache[e.id] = { parts: r.parts, at: t };
+          if (!r.unchanged && rounds) console.log(`  ${new Date().toISOString().slice(11, 19)} ${r.event.sku} updated`);
+        } catch (err) { console.log(`  ${e.sku || e.id}: ${err.message}`); }
+      }
+      rounds++;
+      if (asked) { asked = false; await handleRequests(ctx); await pastSeasonRequests(); }
+      if (Date.now() - chores > 60e3) { chores = Date.now(); await writeStatus(ctx, { lastQuick: FieldValue.serverTimestamp() }); }
+      // Every half hour, pick up newly registered events and newly opened ones.
+      if (Date.now() - refreshed > 30 * 60e3) {
+        refreshed = Date.now();
+        try {
+          const fresh = await context();
+          ctx.events = fresh.events;
+          ctx.active = ctx.events.filter(e => ms(e.start) - Date.now() < config.quickDaysAhead * DAY && Date.now() - ms(e.end) < config.quickDaysAfterEnd * DAY);
+          ctx.watched = await watchedEvents(ctx);
+        } catch (err) { console.log(`  refresh: ${err.message}`); }
+      }
+      await sleep(Math.max(0, config.liveSeconds * 1000 - (Date.now() - t)));
     }
-    rounds++;
-    if (Date.now() - chores > 60e3) { chores = Date.now(); await handleRequests(ctx); await writeStatus(ctx, { lastQuick: FieldValue.serverTimestamp() }); }
-    await sleep(Math.max(0, config.liveSeconds * 1000 - (Date.now() - t)));
-  }
-  if (rounds) { await writeStatus(ctx, { lastQuick: FieldValue.serverTimestamp() }); console.log(`Live mode: ${rounds} rounds, ${requests} requests`); }
+  } finally { unsub(); }
+  if (rounds) { await writeStatus(ctx, { lastQuick: FieldValue.serverTimestamp() }); console.log(`5-second loop: ${rounds} rounds, ${requests} requests`); }
   return rounds > 0;
+}
+
+/** Lookups asked for in Push Back mode, answered with last season's data. */
+let pastCtx = null;
+async function pastSeasonRequests() {
+  if (!(await db.collection("requests").limit(50).get()).docs.some(d => d.get("game") === "pushback")) return;
+  G = GAMES.pushback;
+  try { pastCtx ||= await context(); await handleRequests(pastCtx); }
+  catch (err) { console.log(`Push Back: ${err.message}`); }
+  finally { G = GAMES.override; }
 }
 
 /**
@@ -484,7 +523,11 @@ async function autos() {
 
 async function joinCode() {
   const code = process.env.TEAM_JOIN_CODE;
-  if (code) await db.doc("config/secret").set({ code: code.trim() });
+  if (!code) return;
+  await db.doc("config/secret").set({ code: code.trim() });
+  // The pit display unlocks with the team code. The app can't read config/secret, so it checks
+  // against this hash instead (readable by members only, like everything else).
+  await db.doc("meta/lock").set({ hash: createHash("sha256").update(`19109m-pit:${code.trim()}`).digest("hex") });
 }
 
 await joinCode();

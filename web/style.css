@@ -518,6 +518,13 @@ main.page-pit { min-height: 100dvh; padding: clamp(14px, min(2.5vw, 3.5vh), 32px
 .pit-foot { color: var(--muted); font-size: 0.8em; text-align: center; }
 .pit-controls { position: fixed; right: 14px; bottom: 14px; display: flex; gap: 8px; opacity: 0.25; transition: opacity 0.2s; }
 .pit-controls:hover, .pit-controls:focus-within { opacity: 1; }
+.pit-relock { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; background: rgba(0, 0, 0, 0.35); }
+.pit-relock .btn { font-size: 1.1em; min-height: 56px; padding: 0 24px; }
+.sheet.unlock { gap: 12px; max-width: 420px; }
+@media (min-width: 700px) { .sheet.unlock { top: 22vh; } }
+.sheet.unlock .head { margin-bottom: 0; }
+.shake { animation: shake 0.35s; }
+@keyframes shake { 20%, 60% { transform: translateX(-8px); } 40%, 80% { transform: translateX(8px); } }
 /* On a laptop or TV the display is exactly one screen: cards share the height, and the
    rankings show as many rows as fit (app.js drops the rest, never our row). */
 @media (min-width: 1001px) {

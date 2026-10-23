@@ -4,6 +4,7 @@ import { createBoard } from "./board.js";
 import {
   doc, getDoc, onSnapshot, collection, query, where, addDoc, setDoc, updateDoc, deleteDoc, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+import { EmailAuthProvider, reauthenticateWithCredential } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
 
 const root = document.getElementById("app");
 // Which game the app shows: this season's (Override) or last season's (Push Back). Each has its
@@ -113,6 +114,7 @@ const ICONS = {
   robot: '<rect x="5" y="7" width="14" height="12" rx="2"/><path d="M12 3v4M9 12h.01M15 12h.01M9 16h6"/>',
   expand: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
   insta: '<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.3" cy="6.7" r="1" fill="currentColor"/>',
 };
 const icon = (name, cls = "ic") => {
@@ -353,7 +355,7 @@ views.home = () => {
     tool("#/predict", "predict", "Predictor", "Any four teams"), tool("#/autos", "autos", "Autos", "Our routes"),
     tool("#/board", "board", "Whiteboard", "Draw on the field"), tool("#/pit", "pit", "Pit display", "Leave it at the pit")));
   right.push(section("Our events", h("a", { href: "#/events" }, "All events")), group(...ourEvents().map(eventRow)));
-  right.push(h("p", { class: "footnote" }, fe && isLive(fe) ? `Live: checking for new results every 5 seconds · ${S.status.season?.name || ""}` : `${S.status.season?.name || ""} · updated ${ago(S.status.lastQuick)}`));
+  right.push(h("p", { class: "footnote" }, (fe && isLive(fe)) || S.status.alwaysOn ? `Checking for new results every 5 seconds · ${S.status.season?.name || ""}` : `${S.status.season?.name || ""} · updated ${ago(S.status.lastQuick)}`));
   return [...out, h("div", { class: "cols" }, h("div", { class: "col" }, ...left), h("div", { class: "col" }, ...right))];
 };
 
@@ -998,6 +1000,50 @@ import("./vendor/qrcode.js").then(({ default: qrcode }) => {
   if (lastName === "pit") refresh();
 }).catch(() => {});
 
+// ---- pit lock: once locked, leaving the pit display needs the team code (the one people
+// join with). The app can't read the code itself, only its hash (meta/lock, written by the sync).
+let pitLocked = store.get("pitLock", false), unlockTries = 0, unlockWait = 0;
+function lockPit() {
+  pitLocked = true; store.set("pitLock", true);
+  document.documentElement.requestFullscreen?.().catch(() => {});
+  render();
+}
+const sha256 = async text => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)))].map(b => b.toString(16).padStart(2, "0")).join("");
+async function openUnlock() {
+  if (document.querySelector(".unlock")) return;
+  const lock = await getDoc(doc(db, "meta", "lock")).then(d => (d.exists() ? d.data() : null)).catch(() => null);
+  // Before the sync has stored the code's hash, fall back to this account's own password.
+  const what = lock ? "team code" : "account password";
+  const input = h("input", { type: "password", autocomplete: "off", placeholder: lock ? "Team code" : "Password", "aria-label": what });
+  const msg = h("p", { class: "error", role: "alert" });
+  const close = () => { bg.remove(); box.remove(); };
+  const bg = h("div", { class: "sheet-bg unlock-bg", onclick: close });
+  const box = h("form", { class: "sheet unlock", role: "dialog", "aria-modal": "true", "aria-label": "Unlock pit display", onsubmit: async e => {
+      e.preventDefault();
+      if (Date.now() < unlockWait) { msg.textContent = `Too many tries. Wait ${Math.ceil((unlockWait - Date.now()) / 1000)} s.`; return; }
+      const v = input.value.trim(); if (!v) return;
+      let ok = false;
+      if (lock) ok = (await sha256(`19109m-pit:${v}`)) === lock.hash;
+      else ok = await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, v)).then(() => true, () => false);
+      if (!ok) {
+        input.value = ""; box.classList.remove("shake"); void box.offsetWidth; box.classList.add("shake");
+        if (++unlockTries >= 5) { unlockTries = 0; unlockWait = Date.now() + 30e3; msg.textContent = "Wrong 5 times. Try again in 30 seconds."; }
+        else msg.textContent = `That's not the ${what}.`;
+        return;
+      }
+      unlockTries = 0; pitLocked = false; store.set("pitLock", false); close();
+      if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+      location.hash = "#/";
+    } },
+    h("div", { class: "head" }, h("h3", {}, "Unlock pit display"), h("button", { class: "btn small plain", type: "button", onclick: close }, "Cancel")),
+    h("p", { class: "muted small" }, `Enter the ${what} to leave the pit display.`), input, msg,
+    h("button", { class: "btn primary wide", type: "submit" }, icon("lock"), "Unlock"));
+  box.addEventListener("keydown", e => { if (e.key === "Escape") close(); });
+  document.body.append(bg, box);
+  input.focus();
+}
+document.addEventListener("fullscreenchange", () => { if (lastName === "pit") refresh(); });
+
 /** Fits the pit display to one screen: drop ranking rows (never ours) and older matches until nothing is cut off. */
 function fitPit() {
   if (!matchMedia("(min-width: 1001px)").matches) return;
@@ -1082,11 +1128,20 @@ views.pit = () => {
     h("div", {}, h("span", { class: "pit-ig" }, icon("insta"), "Follow us"), h("b", {}, `@${INSTAGRAM}`), h("span", { class: "muted" }, "Scan to open our Instagram")));
   if (qr) insta.querySelector(".pit-qr").innerHTML = qr;
 
-  const controls = h("div", { class: "pit-controls" }, fullscreenBtn(),
-    h("button", { type: "button", class: "wb-btn", "aria-label": "Close pit display", title: "Close", onclick: exitTo }, icon("close"), h("span", {}, "Close")));
+  const controls = pitLocked
+    ? h("div", { class: "pit-controls" }, h("button", { type: "button", class: "wb-btn", "aria-label": "Unlock", title: "Unlock", onclick: openUnlock }, icon("lock"), h("span", {}, "Unlock")))
+    : h("div", { class: "pit-controls" },
+      h("button", { type: "button", class: "wb-btn", "aria-label": "Lock and go full screen", title: "Lock: leaving needs the team code", onclick: lockPit }, icon("lock"), h("span", {}, document.fullscreenEnabled ? "Lock & full screen" : "Lock")),
+      h("button", { type: "button", class: "wb-btn", "aria-label": "Close pit display", title: "Close", onclick: exitTo }, icon("close"), h("span", {}, "Close")));
+  // Locked but out of full screen (someone pressed Esc): offer the way back in, nothing else.
+  const relock = pitLocked && document.fullscreenEnabled && !document.fullscreenElement
+    ? h("div", { class: "pit-relock" }, h("div", { class: "row" },
+      h("button", { type: "button", class: "btn primary", onclick: () => document.documentElement.requestFullscreen().catch(() => {}) }, icon("expand"), "Back to full screen"),
+      h("button", { type: "button", class: "btn", onclick: openUnlock }, icon("lock"), "Unlock")))
+    : null;
 
   return [head, h("div", { class: "pit-grid" }, nextCard, rankings, stats, matches, insta),
-    h("p", { class: "pit-foot" }, live ? `${G.name} · live · results checked every 5 seconds · last change ${ago(ev?.updatedAt)}` : `${G.name} ${G.years} · updated ${ago(S.status?.lastQuick || S.status?.lastFull)}`), controls];
+    relock, h("p", { class: "pit-foot" }, live || S.status?.alwaysOn ? `${G.name}${live ? " · live" : ""} · results checked every 5 seconds · last change ${ago(ev?.updatedAt)}` : `${G.name} ${G.years} · updated ${ago(S.status?.lastQuick || S.status?.lastFull)}`), controls];
 };
 
 views.more = () => [pagehead("More"),
@@ -1126,7 +1181,8 @@ views.settings = () => {
       lrow({ info: true, title: "Last refresh", trail: ago(S.status?.lastQuick) }),
       lrow({ info: true, title: "Last full refresh", trail: ago(S.status?.lastFull) }),
       lrow({ info: true, title: "Season", trail: S.status?.season?.name || "—" })),
-    h("p", { class: "footnote" }, "Results come from VEX Events: every 5 seconds while one of our events is live, hourly otherwise, and in full each night. New scores show up here the moment they're saved."),
+    h("p", { class: "footnote" }, S.status?.alwaysOn ? "Results come from VEX Events every 5 seconds, all the time, and in full each night. New scores show up here the moment they're saved."
+      : "Results come from VEX Events: every 5 seconds while one of our events is live, hourly otherwise, and in full each night. New scores show up here the moment they're saved."),
     section("Account"),
     group(lrow({ info: true, title: user.email }),
       h("button", { type: "button", class: "lrow noicon", onclick: () => signOut(auth) }, h("span", { class: "tx" }, h("b", { style: "color:var(--bad)" }, "Sign out")), h("span"), h("span")))];
@@ -1155,7 +1211,12 @@ function transition(kind, change) {
   return true;
 }
 function render() {
-  const parts = location.hash.replace(/^#\/?/, "").split("/").map(decodeURIComponent);
+  let parts = location.hash.replace(/^#\/?/, "").split("/").map(decodeURIComponent);
+  // A locked pit display stays put: Back, links and typed addresses come straight back here.
+  if (pitLocked && parts[0] !== "pit") {
+    history.replaceState(null, "", "#/pit"); parts = ["pit"];
+    if (drawn) openUnlock();
+  }
   const name = views[parts[0]] ? parts[0] : "home";
   const route = parts.join("/");
   const fresh = route !== lastRoute;
