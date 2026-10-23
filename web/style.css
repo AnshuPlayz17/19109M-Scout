@@ -411,6 +411,59 @@ pre { margin: 0; padding: 12px; background: var(--surface-2); border: 1px solid 
 .autodetail { display: grid; gap: 16px; align-items: start; }
 @media (min-width: 900px) { .autodetail { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); } .autodetail .sticky { position: sticky; top: 64px; } }
 
+/* ---------- motion. Only real changes move: navigating, a new score, a tick, a theme switch.
+   Live data redraws every few seconds at events, so nothing animates just because it was drawn. */
+:root { --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1); --ease-in: cubic-bezier(0.4, 0, 1, 1); }
+/* page changes (View Transitions): deeper slides in from the right, Back from the left, tabs fade */
+header.top { view-transition-name: topbar; }
+nav.bottom { view-transition-name: tabbar; }
+::view-transition-group(topbar), ::view-transition-group(tabbar) { animation-duration: 0.2s; }
+::view-transition-old(root) { animation: 0.16s var(--ease-in) both page-fade-out; }
+::view-transition-new(root) { animation: 0.24s var(--ease-out) both page-fade-in; }
+html[data-nav="forward"]::view-transition-old(root) { animation: 0.18s var(--ease-in) both page-out-left; }
+html[data-nav="forward"]::view-transition-new(root) { animation: 0.3s var(--ease-out) both page-in-right; }
+html[data-nav="back"]::view-transition-old(root) { animation: 0.18s var(--ease-in) both page-out-right; }
+html[data-nav="back"]::view-transition-new(root) { animation: 0.3s var(--ease-out) both page-in-left; }
+html[data-nav="theme"]::view-transition-old(root), html[data-nav="theme"]::view-transition-new(root) { animation-duration: 0.35s; }
+@keyframes page-fade-out { to { opacity: 0; } }
+@keyframes page-fade-in { from { opacity: 0; transform: translateY(6px); } }
+@keyframes page-out-left { to { opacity: 0; transform: translateX(-28px); } }
+@keyframes page-in-right { from { opacity: 0; transform: translateX(36px); } }
+@keyframes page-out-right { to { opacity: 0; transform: translateX(28px); } }
+@keyframes page-in-left { from { opacity: 0; transform: translateX(-36px); } }
+/* the same, for browsers without View Transitions: the new page eases in */
+main.enter-forward { animation: 0.3s var(--ease-out) both page-in-right; }
+main.enter-back { animation: 0.3s var(--ease-out) both page-in-left; }
+main.enter-tab, main.enter-swap { animation: 0.24s var(--ease-out) both page-fade-in; }
+
+/* press feedback and smooth hover */
+.btn, .tool, .evcard, .next, .chips > *, .optchips button, .stepper button, .podium a, .seg > *, .stars button, .reveal {
+  transition: transform 0.12s var(--ease-out), background-color 0.15s, color 0.15s, box-shadow 0.15s, opacity 0.12s; }
+.lrow, .mrow, .auto-row, .sbar, .note, .check, .step, nav.bottom a { transition: background-color 0.15s, color 0.15s; }
+.btn:active:not(:disabled), .chips > *:active, .optchips button:active, .seg > *:active, .reveal:active { transform: scale(0.96); }
+.tool:active, .evcard:active, .next:active, .podium a:active { transform: scale(0.985); }
+.stepper button:active, .stars button:active { transform: scale(0.88); }
+nav.bottom a svg { transition: transform 0.2s var(--ease-out); }
+nav.bottom a:active svg { transform: scale(0.88); }
+
+/* a score that just came in or changed lights up */
+.flash { animation: flash 1.4s var(--ease-out); border-radius: 6px; }
+@keyframes flash { 0% { background: var(--accent-soft); box-shadow: 0 0 0 4px var(--accent-soft); transform: scale(1.18); } 35% { transform: scale(1); } 100% { background: transparent; box-shadow: 0 0 0 4px transparent; } }
+/* checklist: the box you just ticked pops; the bar slides */
+.check.pop.done .box { animation: pop 0.35s var(--ease-out); }
+.check.pop.done .box svg { animation: draw 0.3s 0.05s var(--ease-out) both; }
+@keyframes pop { 0% { transform: scale(0.6); } 60% { transform: scale(1.15); } 100% { transform: scale(1); } }
+@keyframes draw { from { opacity: 0; transform: scale(0.4) rotate(-12deg); } }
+.progress i { transition: width 0.45s var(--ease-out); }
+/* the team picker slides away instead of vanishing */
+.sheet.closing { animation: sink 0.18s var(--ease-in) forwards; }
+.sheet-bg.closing { animation: fade-out 0.18s forwards; }
+@keyframes sink { to { transform: translateY(40px); opacity: 0; } }
+@keyframes fade-out { to { opacity: 0; } }
+@media (min-width: 700px) { @keyframes sink { to { transform: scale(0.97); opacity: 0; } } }
+/* skeletons give way to content gently */
+main > .skel { animation: fade 0.3s; }
+
 /* mouse hover, only where there is a mouse */
 @media (hover: hover) {
   a.lrow:hover, button.lrow:hover, .tool:hover, .evcard:hover, .mrow:hover, .auto-row:hover, a.note:hover, .sbar:hover, .podium a:hover { background: var(--surface-2); }
@@ -418,4 +471,4 @@ pre { margin: 0; padding: 12px; background: var(--surface-2); border: 1px solid 
   .btn:hover:not(:disabled) { filter: brightness(0.97); }
 }
 
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after, ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { transition: none !important; animation: none !important; } }

@@ -214,6 +214,9 @@ function teamInfo(n) {
   return S.index.teams?.find(t => t.number === n) || null;
 }
 
+// Scores seen so far, so a score that just came in (or changed) can light up for a moment.
+const seen = new Map();
+const changed = (key, v) => { const before = seen.get(key); seen.set(key, v); return before !== undefined && before !== v; };
 /** Under the match name: Won / Lost / Tie for our matches, Final for others, else the start time. */
 function result(m, won) {
   if (!m.scored) return h("span", {}, fmtTime(m.scheduled) || "");
@@ -227,8 +230,9 @@ function matchRow(ev, m, { foot, mark = true } = {}) {
   const mine = m.red.teams.includes(us()) || m.blue.teams.includes(us());
   const p = ev.predictions?.[m.id];
   const won = m.scored ? (m.red.score > m.blue.score ? "red" : m.blue.score > m.red.score ? "blue" : "tie") : null;
+  for (const c of ["red", "blue"]) if (!m.scored) seen.set(`${m.id}${c}`, null);
   const side_ = c => h("div", { class: `side ${c}` }, h("span", { class: "teams" }, m[c].teams.map(tn)),
-    m.scored ? h("span", { class: `sc${won && won !== c ? " lose" : ""}` }, m[c].score)
+    m.scored ? h("span", { class: `sc${won && won !== c ? " lose" : ""}${changed(`${m.id}${c}`, m[c].score) ? " flash" : ""}` }, m[c].score)
       : p !== undefined ? h("span", { class: "pc" }, pct(c === "red" ? p : 1 - p)) : h("span", {}));
   return h("a", { class: `mrow${mark && mine ? " mine" : ""}`, href: `#/match/${ev.id}/${m.id}` },
     h("div", { class: "mname", title: m.name }, h("b", {}, shortName(m.name)), result(m, won)),
@@ -247,7 +251,7 @@ function teamRow(t, ev) {
 function pickTeam({ title, teams, onPick }) {
   let q = "";
   const list = h("div", { class: "list group-list" });
-  const close = () => { bg.remove(); sheet.remove(); };
+  const close = () => { bg.classList.add("closing"); sheet.classList.add("closing"); setTimeout(() => { bg.remove(); sheet.remove(); }, calm.matches ? 0 : 180); };
   const draw = () => {
     const qq = q.trim().toLowerCase();
     const items = teams.filter(t => !qq || `${t.number} ${t.name} ${t.org}`.toLowerCase().includes(qq)).slice(0, 80);
@@ -719,7 +723,8 @@ const DEFAULT_LISTS = [
     "Spare screws, nuts, standoffs", "Spare motors and cartridges", "Engineering notebook", "Power bar and extension cord", "Team shirts", "Water and snacks"] },
 ];
 const newId = () => Math.random().toString(36).slice(2, 10);
-let listId = store.get("list", ""), editing = false;
+let listId = store.get("list", ""), editing = false, ticked = {};
+const barAt = {};
 const saveList = (l, patch) => setDoc(doc(db, "checklists", l.id), { name: l.name, order: l.order ?? 99, items: l.items, done: l.done || {}, ...patch, by: user.uid, at: serverTimestamp() });
 views.checklist = () => {
   watchLists();
@@ -735,10 +740,15 @@ views.checklist = () => {
   const l = S.lists.find(x => x.id === listId) || S.lists[0];
   const done = l.done || {};
   const count = l.items.filter(i => done[i.id]).length;
-  const toggle = it => updateDoc(doc(db, "checklists", l.id), { [`done.${it.id}`]: !done[it.id], by: user.uid, at: serverTimestamp() });
+  // Draw the bar where it was, then let it slide to the new amount.
+  const pctDone = l.items.length ? (count / l.items.length) * 100 : 0;
+  const bar = h("i", { style: `width:${barAt[l.id] ?? pctDone}%` });
+  barAt[l.id] = pctDone;
+  requestAnimationFrame(() => requestAnimationFrame(() => { bar.style.width = `${pctDone}%`; }));
+  const toggle = it => (ticked = { id: it.id, at: Date.now() }, updateDoc(doc(db, "checklists", l.id), { [`done.${it.id}`]: !done[it.id], by: user.uid, at: serverTimestamp() }));
   const move = (i, k) => { const items = l.items.slice(); const j = i + k; if (j < 0 || j >= items.length) return; [items[i], items[j]] = [items[j], items[i]]; saveList(l, { items }); };
   const remove = it => { const d2 = { ...done }; delete d2[it.id]; saveList(l, { items: l.items.filter(x => x.id !== it.id), done: d2 }); };
-  const rows = l.items.map((it, i) => h("div", { class: `check${done[it.id] ? " done" : ""}`, role: editing ? null : "checkbox", "aria-checked": editing ? null : String(!!done[it.id]), tabindex: editing ? null : "0",
+  const rows = l.items.map((it, i) => h("div", { class: `check${done[it.id] ? " done" : ""}${ticked.id === it.id && Date.now() - ticked.at < 1500 ? " pop" : ""}`, role: editing ? null : "checkbox", "aria-checked": editing ? null : String(!!done[it.id]), tabindex: editing ? null : "0",
     onclick: editing ? null : () => toggle(it), onkeydown: editing ? null : e => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); toggle(it); } } },
     h("span", { class: "box", "aria-hidden": "true" }, icon("check")), h("span", { class: "txt" }, it.text),
     editing ? h("span", { class: "acts" },
@@ -753,7 +763,7 @@ views.checklist = () => {
         listId = id; store.set("list", id); editing = true;
         await setDoc(doc(db, "checklists", id), { name: name.trim().slice(0, 40), order: S.lists.length, items: [], done: {}, by: user.uid, at: serverTimestamp() }); } }, icon("plus"), "New list")),
     card(h("div", { class: "row between" }, h("h3", {}, l.name), h("span", { class: "muted num" }, `${count} of ${l.items.length}`)),
-      h("div", { class: "progress", role: "progressbar", "aria-label": "Done", "aria-valuenow": count, "aria-valuemax": l.items.length }, h("i", { style: `width:${l.items.length ? (count / l.items.length) * 100 : 0}%` }))),
+      h("div", { class: "progress", role: "progressbar", "aria-label": "Done", "aria-valuenow": count, "aria-valuemax": l.items.length }, bar)),
     group(...rows, l.items.length ? null : h("p", { class: "empty" }, "No items yet. Tap Edit list to add some.")),
     editing ? h("form", { class: "row", style: "flex-wrap:nowrap", onsubmit: add }, addInput, h("button", { class: "btn primary", type: "submit" }, "Add")) : null,
     h("div", { class: "row" },
@@ -813,7 +823,7 @@ views.scorer = () => {
       h("button", { type: "button", "aria-label": `Fewer ${label}, ${c}`, onclick: () => { score[c][k] = Math.max(0, score[c][k] - 1); render(); } }, "−"),
       h("output", {}, score[c][k]),
       h("button", { type: "button", "aria-label": `More ${label}, ${c}`, onclick: () => { score[c][k] = Math.min(max, score[c][k] + 1); render(); } }, "+")));
-  const sideBox = c => h("div", { class: `team ${c}` }, h("div", { class: "row between" }, h("h3", {}, c === "red" ? "Red" : "Blue"), h("span", { class: "total", "aria-live": "polite" }, total(c))),
+  const sideBox = c => h("div", { class: `team ${c}` }, h("div", { class: "row between" }, h("h3", {}, c === "red" ? "Red" : "Blue"), h("span", { class: `total${changed(`score${c}`, total(c)) ? " flash" : ""}`, "aria-live": "polite" }, total(c))),
     counter(c, "alliancePin", "Alliance pins", 99), counter(c, "yellowPin", "Owned yellow pins", 99), counter(c, "midfield", "In midfield", 2));
   const lead = total("red") - total("blue");
   return [pagehead("Scorer"),
@@ -890,7 +900,7 @@ views.settings = () => {
     } }, nick, msg, h("button", { class: "btn primary", type: "submit" }, "Save")),
     h("p", { class: "footnote" }, "Shown on your scouting notes."),
     section("Appearance"),
-    seg([["system", "System"], ["light", "Light"], ["dark", "Dark"]], store.get("theme", "system"), v => { store.set("theme", v); applyTheme(v); render(); }),
+    seg([["system", "System"], ["light", "Light"], ["dark", "Dark"]], store.get("theme", "system"), v => { store.set("theme", v); transition("theme", () => { applyTheme(v); render(); }); }),
     h("p", { class: "footnote" }, "System follows your phone's light or dark mode. Saved on this device."),
     section("Data"),
     group(
@@ -913,13 +923,33 @@ const TAB_OF = { event: "events", match: "events", team: "teams", checklist: "mo
 const BACK = { event: ["Events", "#/events"], match: ["Back"], team: ["Back"], checklist: ["More", "#/more"], scorer: ["More", "#/more"], predict: ["More", "#/more"], settings: ["More", "#/more"] };
 const wide = matchMedia("(min-width: 900px)");
 let lastRoute = "", titleObs = null;
+// How deep each page sits, so moving deeper slides in from the right and Back slides the other way.
+const DEPTH = { home: 0, events: 0, teams: 0, autos: 0, more: 0, event: 1, checklist: 1, scorer: 1, predict: 1, settings: 1, match: 2, team: 2 };
+const calm = matchMedia("(prefers-reduced-motion: reduce)");
+let lastName = "", lastDepth = 0, drawn = false, moving = null;
+/** Runs `change` as an animated transition (View Transitions where the browser has them). */
+function transition(kind, change) {
+  if (calm.matches || !document.startViewTransition) { change(); return false; }
+  document.documentElement.dataset.nav = kind;
+  const t = moving = document.startViewTransition(change);
+  t.finished.finally(() => { if (moving === t) { moving = null; delete document.documentElement.dataset.nav; } });
+  return true;
+}
 function render() {
-  stopAnim();
   const parts = location.hash.replace(/^#\/?/, "").split("/").map(decodeURIComponent);
   const name = views[parts[0]] ? parts[0] : "home";
   const route = parts.join("/");
   const fresh = route !== lastRoute;
-  lastRoute = route;
+  // Only real navigation animates; live data redraws (every few seconds at events) stay still.
+  const depth = name === "autos" && parts[1] ? 1 : DEPTH[name] ?? 0;
+  if (!fresh || !drawn) { drawn = true; lastRoute = route; lastName = name; lastDepth = depth; draw(parts, name, fresh); return; }
+  const from = lastDepth, to = depth;
+  const kind = name === lastName && to === from ? "swap" : to > from ? "forward" : to < from ? "back" : "tab";
+  lastRoute = route; lastName = name; lastDepth = depth;
+  if (!transition(kind, () => draw(parts, name, true)) && !calm.matches) root.querySelector("main")?.classList.add(`enter-${kind}`);
+}
+function draw(parts, name, fresh) {
+  stopAnim();
   const y = fresh ? 0 : scrollY;
   document.body.classList.add("has-nav");
   const isWide = wide.matches;
@@ -951,6 +981,8 @@ wide.addEventListener?.("change", () => render());
 
 let pending = false;
 function refresh() {
+  // Data that lands mid-transition waits for it (a third of a second); redrawing now would cut it short.
+  if (moving) { moving.finished.finally(refresh); return; }
   if (pending) return;
   pending = true;
   requestAnimationFrame(() => {
