@@ -149,12 +149,22 @@ const reEvent = sku => `https://www.robotevents.com/robot-competitions/vex-robot
 const reTeam = n => `https://www.robotevents.com/teams/V5RC/${encodeURIComponent(n)}`;
 const teamHref = n => `#/team/${encodeURIComponent(n)}`;
 const tn = n => h("span", { class: `tn${n === us() ? " us" : ""}` }, n);
-// Team number in a fixed-size tile; the font shrinks so long numbers like 19109M still fit.
+// Team number in a fixed-size tile. The size here is a first guess; fitBadges() then
+// measures the drawn text and shrinks any that are still too wide for their tile.
 const badge = (n, size = "") => {
   const s = String(n), [w, max] = size === "lg" ? [76, 26] : [54, 17];
-  const fs = Math.min(max, (w - 12) / (s.length * 0.52));
+  const fs = Math.min(max, (w - 12) / (s.length * 0.55));
   return h("span", { class: `badge ${size}${n === us() ? " us" : ""}`, style: `font-size:${fs.toFixed(1)}px`, "aria-hidden": "true" }, s);
 };
+function fitBadges(el) {
+  const r = document.createRange();
+  for (const b of el.querySelectorAll(".badge")) {
+    r.selectNodeContents(b);
+    const text = r.getBoundingClientRect().width, room = b.clientWidth - 10;
+    if (text > room) b.style.fontSize = `${(parseFloat(b.style.fontSize) * room / text).toFixed(1)}px`;
+  }
+}
+document.fonts?.ready.then(() => fitBadges(document.body));
 // "Qualifier #12" -> "Q12", "Practice #3" -> "P3", "SF #1-1" -> "SF 1-1", "Final #1-2" -> "F 1-2"
 const shortName = name => String(name).replace(/^Qualifier #/, "Q").replace(/^Practice #/, "P").replace(/^Final #/, "F ").replace(/ #/, " ");
 const teamName = n => teamInfo(n)?.name || "";
@@ -235,6 +245,7 @@ function pickTeam({ title, teams, onPick }) {
     const items = teams.filter(t => !qq || `${t.number} ${t.name} ${t.org}`.toLowerCase().includes(qq)).slice(0, 80);
     list.replaceChildren(...items.map(t => lrow({ lead: badge(t.number), title: t.number, sub: [t.name, t.org].filter(Boolean).join(" · "), onclick: () => { close(); onPick(t.number); } })));
     if (!items.length) list.append(h("p", { class: "empty" }, "No teams match."));
+    if (list.isConnected) fitBadges(list);
   };
   const bg = h("div", { class: "sheet-bg", onclick: close });
   const input = h("input", { type: "search", placeholder: "Number, name or school", "aria-label": "Search teams", oninput: e => { q = e.target.value; draw(); } });
@@ -244,6 +255,7 @@ function pickTeam({ title, teams, onPick }) {
     h("div", { class: "search" }, icon("search"), input), list);
   draw();
   document.body.append(bg, sheet);
+  fitBadges(list);
   if (matchMedia("(min-width: 700px)").matches) input.focus();
 }
 
@@ -459,6 +471,7 @@ views.teams = () => {
     if (q) items = items.filter(t => `${t.number} ${t.name} ${t.org} ${t.city} ${t.robot}`.toLowerCase().includes(q));
     if (scope === "event") items = items.slice().sort((a, b) => (ev.ratings?.[b.number]?.rating ?? 0) - (ev.ratings?.[a.number]?.rating ?? 0));
     list.replaceChildren(...items.slice(0, 80).map(t => teamRow(t, scope === "event" ? ev : null)));
+    if (list.isConnected) fitBadges(list);
     count.textContent = items.length > 80 ? `Showing 80 of ${items.length}. Search to narrow it down.` : "";
     if (!items.length) list.append(h("p", { class: "empty" }, S.index.teams?.length || scope === "event" ? "No teams match." : "Loading teams…"));
   };
@@ -909,6 +922,7 @@ function render() {
     titleObs = new IntersectionObserver(([e]) => head.classList.toggle("titled", !e.isIntersecting), { rootMargin: "-52px 0px 0px 0px" });
     titleObs.observe(big);
   }
+  fitBadges(root);
   scrollTo(0, y);
   head.classList.toggle("scrolled", scrollY > 4);
 }
