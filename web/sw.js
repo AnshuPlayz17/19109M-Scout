@@ -5,7 +5,7 @@ const VERSION = "__VERSION__";
 const CACHE = `scout-${VERSION}`;
 const SDK = "https://www.gstatic.com/firebasejs/12.19.0/";
 const FILES = [
-  "./", "index.html", "app.js", "fb.js", "firebase-config.js", "style.css", "field.webp",
+  "./", "app.js", "fb.js", "firebase-config.js", "style.css", "field.webp",
   "icon.svg", "icon-180.png", "icon-512.png", "manifest.webmanifest", "fonts/inter.woff2", "fonts/jakarta.woff2", "fonts/bebas.woff2",
   `${SDK}firebase-app.js`, `${SDK}firebase-auth.js`, `${SDK}firebase-firestore.js`,
 ];
@@ -35,8 +35,10 @@ self.addEventListener("fetch", e => {
   if (ours && (url.pathname.startsWith("/__/") || url.pathname.endsWith("/sw.js"))) return;
   e.respondWith((async () => {
     const cache = await caches.open(CACHE);
-    // Pages always come from the cached app shell; routing happens in the app.
-    const key = req.mode === "navigate" ? "index.html" : req;
+    // Pages always come from the cached app shell; routing happens in the app. The shell is
+    // cached as "./": hosting redirects index.html there (cleanUrls), and Chrome refuses a
+    // redirected response for a page load (ERR_FAILED).
+    const key = req.mode === "navigate" ? "./" : req;
     const hit = await cache.match(key, { ignoreSearch: true });
     if (hit) return hit;
     const res = await fetch(req);
