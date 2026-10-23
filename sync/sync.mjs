@@ -552,9 +552,9 @@ async function admins() {
   const emails = (process.env.ADMIN_EMAILS || "").split(",").map(e => e.trim()).filter(Boolean);
   if (!emails.length) return;
   const uids = [];
-  for (const e of emails) {
+  for (const [i, e] of emails.entries()) {
     try { uids.push((await getAuth().getUserByEmail(e)).uid); }
-    catch (err) { console.log(`Admin ${e.replace(/(.).*@/, "$1…@")}: no account yet (${err.code || err.message})`); }
+    catch (err) { console.log(`Admin ${i + 1} of ${emails.length}: no account with that email yet (${err.code || err.message})`); } // never print the email: logs are public
   }
   await db.doc("meta/admins").set({ uids });
   console.log(`${uids.length} admin${uids.length === 1 ? "" : "s"}`);
