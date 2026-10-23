@@ -112,6 +112,15 @@ const store = {
   set(k, v) { try { localStorage.setItem("19109m." + k, JSON.stringify(v)); } catch {} },
 };
 
+// Light, Dark or System (follow the device). index.html applies it before the page draws.
+const applyTheme = t => {
+  if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
+  const dark = t === "dark" || (t !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+  document.querySelectorAll('meta[name="theme-color"]').forEach(m => m.setAttribute("content", dark ? "#0c0d0f" : "#f2f3f5"));
+};
+applyTheme(store.get("theme", "system"));
+matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => applyTheme(store.get("theme", "system")));
+
 const ms = d => (d ? Date.parse(d) : NaN);
 const DAY = 86400e3;
 const fmtDay = d => new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric" });
@@ -140,19 +149,23 @@ const reEvent = sku => `https://www.robotevents.com/robot-competitions/vex-robot
 const reTeam = n => `https://www.robotevents.com/teams/V5RC/${encodeURIComponent(n)}`;
 const teamHref = n => `#/team/${encodeURIComponent(n)}`;
 const tn = n => h("span", { class: `tn${n === us() ? " us" : ""}` }, n);
+// Team number in a fixed-size tile; the font shrinks so long numbers like 19109M still fit.
 const badge = (n, size = "") => {
-  const s = String(n), fs = size === "lg" ? Math.min(22, 120 / s.length) : Math.min(15, 70 / s.length);
-  return h("span", { class: `badge ${size}${n === us() ? " us" : ""}`, style: `font-size:${fs}px`, "aria-hidden": "true" }, s);
+  const s = String(n), [w, max] = size === "lg" ? [76, 26] : [54, 17];
+  const fs = Math.min(max, (w - 12) / (s.length * 0.52));
+  return h("span", { class: `badge ${size}${n === us() ? " us" : ""}`, style: `font-size:${fs.toFixed(1)}px`, "aria-hidden": "true" }, s);
 };
+// "Qualifier #12" -> "Q12", "Practice #3" -> "P3", "SF #1-1" -> "SF 1-1", "Final #1-2" -> "F 1-2"
+const shortName = name => String(name).replace(/^Qualifier #/, "Q").replace(/^Practice #/, "P").replace(/^Final #/, "F ").replace(/ #/, " ");
 const teamName = n => teamInfo(n)?.name || "";
 const ourEvents = () => (S.status?.ourEvents || []).slice().sort((a, b) => ms(a.start) - ms(b.start));
 const ratingFrac = r => 1 / (1 + Math.exp(-1.6 * (r || 0)));
 const meter = (v, cls = "") => h("span", { class: `meter ${cls}`, "aria-hidden": "true" }, h("i", { style: `width:${Math.max(4, Math.min(100, v * 100))}%` }));
 
 /** One row of a grouped list, like the iPhone Settings app. `info` rows don't navigate. */
-function lrow({ ic, color, lead, title, sub, trail, strong, href, onclick, external, info }) {
+function lrow({ ic, lead, title, sub, trail, strong, href, onclick, external, info }) {
   const kids = [
-    lead || (ic ? h("span", { class: "ico", style: color ? `background:${color}` : null }, icon(ic)) : null),
+    lead || (ic ? h("span", { class: "ico" }, icon(ic)) : null),
     h("span", { class: "tx" }, h("b", {}, title), sub ? h("span", {}, sub) : null),
     trail !== undefined && trail !== null && trail !== "" ? h("span", { class: `tr${strong ? " strong" : ""}` }, trail) : h("span", {}),
     info ? h("span", {}) : icon(external ? "ext" : "chev", "chev"),
@@ -200,7 +213,7 @@ function matchRow(ev, m, { foot, mark = true } = {}) {
     m.scored ? h("span", { class: `sc${won && won !== c ? " lose" : ""}` }, m[c].score)
       : p !== undefined ? h("span", { class: "pc" }, pct(c === "red" ? p : 1 - p)) : h("span", {}));
   return h("a", { class: `mrow${mark && mine ? " mine" : ""}`, href: `#/match/${ev.id}/${m.id}` },
-    h("div", { class: "mname" }, h("b", {}, m.name), h("span", {}, m.scored ? (won === "tie" ? "Tie" : "Final") : fmtTime(m.scheduled) || "")),
+    h("div", { class: "mname", title: m.name }, h("b", {}, shortName(m.name)), h("span", {}, m.scored ? (won === "tie" ? "Tie" : "Final") : fmtTime(m.scheduled) || "")),
     h("div", { class: "sides" }, side_("red"), side_("blue"), foot ? h("div", { class: "mfoot" }, foot) : null));
 }
 const matchList = (ev, list, opts) => h("div", { class: "mlist" }, list.map(m => matchRow(ev, m, opts)));
@@ -243,8 +256,8 @@ views.home = () => {
   const rk = fe0 && S.events[fe0.id]?.rankings?.find(x => x.team === us());
   const out = [h("header", { class: "teamhead" },
     h("div", {}, h("h1", {}, S.status?.team?.number || "19109M"), h("p", {}, S.status?.team?.name || "UTS Circuit Breakers")),
-    fe0 ? h("a", { class: "now", href: `#/event/${fe0.id}` }, h("span", {}, isLive(fe0) ? "Live now" : ms(fe0.start) > Date.now() ? `Next event, ${until(fe0.start)}` : "Last event"),
-      h("b", {}, fe0.name), rk ? h("span", {}, `Rank #${rk.rank} · ${rk.wins}-${rk.losses}-${rk.ties}`) : null) : null)];
+    fe0 ? h("a", { class: `now${isLive(fe0) ? " live" : ""}`, href: `#/event/${fe0.id}` }, h("span", {}, isLive(fe0) ? "Live now" : ms(fe0.start) > Date.now() ? `Next event, ${until(fe0.start)}` : "Last event"),
+      h("b", {}, fe0.name), h("span", {}, rk ? `Rank #${rk.rank} · ${rk.wins}-${rk.losses}-${rk.ties}` : [fmtDates(fe0), where_(fe0)].filter(Boolean).join(" · "))) : null)];
   if (S.status === undefined) return [...out, ...skeleton(200, 64, 160)];
   if (S.status === null) {
     out.push(notice("On GitHub, open Actions → Scout sync → Run workflow, mode full. Your events show up here when it finishes.", "Waiting for the first data sync", "refresh"));
@@ -263,17 +276,13 @@ views.home = () => {
         h("div", { class: "row between", style: "flex-wrap:nowrap;align-items:flex-start" },
           h("div", { style: "display:flex;flex-direction:column;gap:4px;min-width:0" },
             h("span", { class: `eyebrow ${om.color}-t` }, `${om.color === "red" ? "Red" : "Blue"} alliance`),
-            h("span", { class: "big" }, m.name),
+            h("span", { class: "big" }, shortName(m.name)),
             h("span", { class: "muted small" }, [m.scheduled && `${fmtTime(m.scheduled)}, ${until(m.scheduled)}`, m.field].filter(Boolean).join(" · ") || fe.name)),
           om.win !== null ? ring(om.win, { label: "to win" }) : null),
         h("div", { class: "vs" },
           h("div", {}, h("span", { class: "eyebrow" }, "With"), who(us(), "Us"), om.partners.map(n => who(n))),
           h("div", {}, h("span", { class: "eyebrow" }, "Against"), om.opponents.map(n => who(n))))));
-    } else {
-      left.push(section(isLive(fe) ? "Live now" : ms(fe.start) > Date.now() ? "Next event" : "Last event"),
-        group(lrow({ href: `#/event/${fe.id}`, ic: "calendar", title: fe.name, sub: `${fmtDates(fe)} · ${where_(fe)}`,
-          trail: ev ? (ev.ourMatches?.length ? "All played" : `${ev.teams.length} teams`) : until(fe.start) })));
-    }
+    } // with no match to play, the event card at the top says where we are
     const r = ev?.rankings?.find(x => x.team === us());
     if (r) {
       const o = ev.oprs?.[us()];
@@ -328,7 +337,7 @@ views.event = (id, tab) => {
     const asked = S.requested.has(`event:${id}`);
     return [pagehead(e?.name || `Event ${id}`, e ? `${fmtDates(e)} · ${where_(e)}` : ""),
       h("div", { class: "notice" }, icon("download"), h("b", {}, "Not loaded yet"),
-        h("span", {}, "It shows up after the next refresh: within an hour, or 15 minutes on weekends. It stays live while the event runs."),
+        h("span", {}, "It shows up after the next refresh, within the hour (within a minute while one of our events is live). It stays up to date while the event runs."),
         h("button", { class: "btn primary", disabled: asked, onclick: () => request("event", id) }, asked ? "Requested" : "Load this event")),
       e ? group(lrow({ href: reEvent(e.sku), title: "Open on RobotEvents", external: true })) : null];
   }
@@ -392,16 +401,16 @@ views.event = (id, tab) => {
     if (!ev.skills.length) out.push(notice("Skills scores show here once teams run them.", "No skills runs yet", "trophy"));
     else {
       const max = Math.max(...ev.skills.map(s => s.total), 1);
-      out.push(group(h("div", { class: "legend" }, h("span", {}, h("i", { style: "background:var(--accent)" }), "Driver"), h("span", {}, h("i", { style: "background:var(--g-auto)" }), "Autonomous")),
+      out.push(group(h("div", { class: "legend" }, h("span", {}, h("i", { style: "background:var(--accent)" }), "Driver"), h("span", {}, h("i", { style: "background:var(--faint)" }), "Autonomous")),
         ...ev.skills.map(s => h("a", { class: "sbar", href: teamHref(s.team) }, h("span", { class: "rk" }, s.rank), tn(s.team),
           h("span", { class: "track", role: "img", "aria-label": `Driver ${s.driver}, autonomous ${s.prog}` }, h("i", { class: "d", style: `width:${(s.driver / max) * 100}%` }), h("i", { class: "p", style: `width:${(s.prog / max) * 100}%` })),
           h("b", {}, s.total)))));
     }
   }
   out.push(section("More"), group(
-    lrow({ href: `#/predict/${id}`, ic: "predict", color: "var(--g-scout)", title: "Win predictor", sub: "Pick any four teams here" }),
-    !ev.ours ? lrow({ ic: "refresh", color: "var(--g-game)", title: S.requested.has(`event:${id}`) ? "Refresh requested" : "Refresh this event", sub: `Updated ${ago(ev.updatedAt)}`, onclick: () => request("event", id) }) : null,
-    lrow({ href: reEvent(ev.sku), ic: "ext", color: "var(--g-game)", title: "Open on RobotEvents", external: true })));
+    lrow({ href: `#/predict/${id}`, ic: "predict", title: "Win predictor", sub: "Pick any four teams here" }),
+    !ev.ours ? lrow({ ic: "refresh", title: S.requested.has(`event:${id}`) ? "Refresh requested" : "Refresh this event", sub: `Updated ${ago(ev.updatedAt)}`, onclick: () => request("event", id) }) : null,
+    lrow({ href: reEvent(ev.sku), ic: "ext", title: "Open on RobotEvents", external: true })));
   return out;
 };
 
@@ -536,7 +545,7 @@ views.team = n => {
     x.by === user.uid ? h("button", { class: "btn small danger", style: "align-self:flex-start", onclick: () => { if (confirm("Delete this note?")) deleteDoc(doc(db, "scouting", x.id)); } }, "Delete") : null))));
   right.push(group(lrow({ href: reTeam(n), title: "Open on RobotEvents", external: true })));
 
-  return [h("header", { class: "profile" }, badge(n, "lg"), h("div", { class: "t" }, h("h1", {}, n), h("p", {}, [t?.name, t?.org, [t?.city, t?.region].filter(Boolean).join(", ")].filter(Boolean).join(" · ")))),
+  return [h("header", { class: "profile" }, h("div", { class: "t" }, h("h1", {}, n), h("p", {}, [t?.name, t?.org, [t?.city, t?.region].filter(Boolean).join(", ")].filter(Boolean).join(" · ")))),
     h("div", { class: "cols" }, h("div", { class: "col" }, ...left), h("div", { class: "col" }, ...right))];
 };
 
@@ -830,12 +839,12 @@ views.predict = eid => {
 
 views.more = () => [pagehead("More"),
   group(
-    lrow({ href: "#/checklist", ic: "checklist", color: "var(--g-team)", title: "Checklist", sub: "Before each match, packing list, your own" }),
-    lrow({ href: "#/scorer", ic: "scorer", color: "var(--g-match)", title: "Scorer", sub: "Match timer and score counter" }),
-    lrow({ href: "#/predict", ic: "predict", color: "var(--g-scout)", title: "Predictor", sub: "Win chance for any four teams" })),
+    lrow({ href: "#/checklist", ic: "checklist", title: "Checklist", sub: "Before each match, packing list, your own" }),
+    lrow({ href: "#/scorer", ic: "scorer", title: "Scorer", sub: "Match timer and score counter" }),
+    lrow({ href: "#/predict", ic: "predict", title: "Predictor", sub: "Win chance for any four teams" })),
   group(
-    lrow({ href: "#/settings", ic: "settings", color: "var(--g-game)", title: "Settings", sub: `Signed in as ${S.nickname}` }),
-    lrow({ href: reTeam(us()), ic: "ext", color: "var(--g-game)", title: `${us()} on RobotEvents`, external: true }))];
+    lrow({ href: "#/settings", ic: "settings", title: "Settings", sub: `Signed in as ${S.nickname}` }),
+    lrow({ href: reTeam(us()), ic: "ext", title: `${us()} on RobotEvents`, external: true }))];
 
 views.settings = () => {
   const nick = h("input", { value: S.nickname, maxlength: 24, "aria-label": "Nickname" });
@@ -847,12 +856,15 @@ views.settings = () => {
       try { await updateDoc(doc(db, "members", user.uid), { nickname: v }); S.nickname = v; rememberMember(user.uid, { nickname: v }); msg.textContent = "Saved. New notes use this name."; } catch (err) { msg.textContent = `Couldn't save: ${err.code}`; }
     } }, nick, msg, h("button", { class: "btn primary", type: "submit" }, "Save")),
     h("p", { class: "footnote" }, "Shown on your scouting notes."),
+    section("Appearance"),
+    seg([["system", "System"], ["light", "Light"], ["dark", "Dark"]], store.get("theme", "system"), v => { store.set("theme", v); applyTheme(v); render(); }),
+    h("p", { class: "footnote" }, "System follows your phone's light or dark mode. Saved on this device."),
     section("Data"),
     group(
       lrow({ info: true, title: "Last refresh", trail: ago(S.status?.lastQuick) }),
       lrow({ info: true, title: "Last full refresh", trail: ago(S.status?.lastFull) }),
       lrow({ info: true, title: "Season", trail: S.status?.season?.name || "—" })),
-    h("p", { class: "footnote" }, "Results come from RobotEvents: every 15 minutes on weekend afternoons and evenings, every hour otherwise, and fully each night."),
+    h("p", { class: "footnote" }, "Results come from RobotEvents: every 5 seconds while one of our events is live, hourly otherwise, and in full each night. New scores show up here the moment they're saved."),
     section("Account"),
     group(lrow({ info: true, title: user.email }),
       h("button", { type: "button", class: "lrow noicon", onclick: () => signOut(auth) }, h("span", { class: "tx" }, h("b", { style: "color:var(--bad)" }, "Sign out")), h("span"), h("span")))];
@@ -888,7 +900,7 @@ function render() {
     h("div", { class: "right" }, name === "autos" ? seg([["red", "Red"], ["blue", "Blue"]], side, v => { side = v; store.set("alliance", v); render(); }, "red-blue") : null));
   const current = k => isWide ? (k === name || (k === "events" && ["event", "match"].includes(name)) || (k === "teams" && name === "team")) : k === tab;
   root.replaceChildren(head, h("main", {}, content),
-    h("nav", { class: "bottom", "aria-label": "Main" }, (isWide ? NAV_WIDE : NAV).map(([k, label, path]) => h("a", { href: `#/${path}`, "aria-current": current(k) ? "page" : null }, icon(k), label))));
+    h("nav", { class: "bottom", "aria-label": "Main" }, isWide ? h("div", { class: "navbrand" }, h("b", {}, us()), h("span", {}, "Scout")) : null, (isWide ? NAV_WIDE : NAV).map(([k, label, path]) => h("a", { href: `#/${path}`, "aria-current": current(k) ? "page" : null }, icon(k), label))));
   const big = root.querySelector("main h1");
   head.querySelector(".title").textContent = big?.textContent || "";
   if (titleObs) titleObs.disconnect();

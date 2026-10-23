@@ -6,7 +6,8 @@ const CACHE = `scout-${VERSION}`;
 const SDK = "https://www.gstatic.com/firebasejs/12.19.0/";
 const FILES = [
   "./", "app.js", "fb.js", "firebase-config.js", "style.css", "field.webp",
-  "icon.svg", "icon-180.png", "icon-512.png", "manifest.webmanifest", "fonts/inter.woff2", "fonts/jakarta.woff2", "fonts/bebas.woff2",
+  "icon.svg", "icon-180.png", "icon-512.png", "manifest.webmanifest",
+  "fonts/barlow-400.woff2", "fonts/barlow-500.woff2", "fonts/barlow-600.woff2", "fonts/barlow-sc-600.woff2", "fonts/barlow-sc-700.woff2",
   `${SDK}firebase-app.js`, `${SDK}firebase-auth.js`, `${SDK}firebase-firestore.js`,
 ];
 
@@ -35,11 +36,21 @@ self.addEventListener("fetch", e => {
   if (ours && (url.pathname.startsWith("/__/") || url.pathname.endsWith("/sw.js"))) return;
   e.respondWith((async () => {
     const cache = await caches.open(CACHE);
-    // Pages always come from the cached app shell; routing happens in the app. The shell is
-    // cached as "./": hosting redirects index.html there (cleanUrls), and Chrome refuses a
-    // redirected response for a page load (ERR_FAILED).
-    const key = req.mode === "navigate" ? "./" : req;
-    const hit = await cache.match(key, { ignoreSearch: true });
+    // Page loads: the network first, so the page always opens and is never a stale copy;
+    // the saved app shell only when the network is down or slower than 3 seconds.
+    if (req.mode === "navigate") {
+      const net = fetch(req).then(res => {
+        if (res.ok && !res.redirected) cache.put("./", res.clone());
+        return res;
+      });
+      try {
+        const res = await Promise.race([net, new Promise((_, no) => setTimeout(no, 3000))]);
+        if (res.ok) return res;
+      } catch {}
+      const shell = await cache.match("./");
+      return shell && !shell.redirected ? shell : net;
+    }
+    const hit = await cache.match(req, { ignoreSearch: true });
     if (hit) return hit;
     const res = await fetch(req);
     if (res.ok && ours) cache.put(req, res.clone());

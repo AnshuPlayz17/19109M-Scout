@@ -138,17 +138,28 @@ async function readTeamStats(numbers) {
 
 // ---------- One event ----------
 
-async function syncEvent(summary, { ours, ourNumber, season: seasonCache, lastSig }) {
-  const e = await get(`events/${summary.id}`);
-  const teams = (await all(`events/${e.id}/teams`)).map(compactTeam);
-  const matches = [], rankings = [];
+/**
+ * Fetches one event and writes it. `reuse` (live mode) is the previous call's `parts`: the
+ * event, teams and skills are taken from it, and only divisions with our team in them are
+ * fetched again, so a live round is two requests instead of a dozen at Worlds.
+ */
+async function syncEvent(summary, { ours, ourNumber, season: seasonCache, lastSig, reuse }) {
+  const e = reuse?.e || await get(`events/${summary.id}`);
+  const teams = reuse?.teams || (await all(`events/${e.id}/teams`)).map(compactTeam);
+  const divs = {};
   for (const d of e.divisions || []) {
-    matches.push(...(await all(`events/${e.id}/divisions/${d.id}/matches`)).map(m => compactMatch(m, d.name)));
-    rankings.push(...(await all(`events/${e.id}/divisions/${d.id}/rankings`)).map(r => ({
+    const prev = reuse?.divs[d.id];
+    if (prev && !prev.ours) { divs[d.id] = prev; continue; }
+    const dm = (await all(`events/${e.id}/divisions/${d.id}/matches`)).map(m => compactMatch(m, d.name));
+    const dr = (await all(`events/${e.id}/divisions/${d.id}/rankings`)).map(r => ({
       div: d.name, rank: r.rank, team: r.team?.name, wins: r.wins, losses: r.losses, ties: r.ties, wp: r.wp, ap: r.ap, sp: r.sp, high: r.high_score, avg: r.average_points,
-    })));
+    }));
+    // A division is ours if we play or rank in it. Before the schedule is out, check them all.
+    const mine = !dm.length || dm.some(m => m.red.teams.includes(ourNumber) || m.blue.teams.includes(ourNumber)) || dr.some(r => r.team === ourNumber);
+    divs[d.id] = { matches: dm, rankings: dr, ours: mine };
   }
-  const skillsRaw = await all(`events/${e.id}/skills`);
+  const matches = Object.values(divs).flatMap(d => d.matches), rankings = Object.values(divs).flatMap(d => d.rankings);
+  const skillsRaw = reuse?.skillsRaw || await all(`events/${e.id}/skills`);
   const sk = {};
   for (const k of skillsRaw) {
     const n = k.team?.name; if (!n) continue;
@@ -183,10 +194,11 @@ async function syncEvent(summary, { ours, ourNumber, season: seasonCache, lastSi
   };
   // Skip the write when nothing changed, so phones don't re-download the same event.
   const sig = hash({ teams, matches, rankings, skills });
-  if (sig === lastSig) return { event: doc, season, sig, unchanged: true };
+  const parts = { e, teams, divs, skillsRaw };
+  if (sig === lastSig) return { event: doc, season, sig, parts, unchanged: true };
   await db.doc(`events/${e.id}`).set(doc);
   console.log(`  ${e.sku} ${e.name}: ${teams.length} teams, ${matches.length} matches (${matches.filter(m => m.scored).length} scored)`);
-  return { event: doc, season, sig };
+  return { event: doc, season, sig, parts };
 }
 
 // ---------- Team notes ----------
@@ -337,14 +349,16 @@ async function quick() {
 }
 
 /**
- * Live mode: while one of our events is running, keep this job going and re-check its
- * matches and rankings every few seconds, so the app updates within half a minute.
- * Stops when the event ends or before the next hourly run starts (which carries on).
+ * Live mode: while one of our events is running, keep this job going and re-check our
+ * division's matches and rankings every few seconds (config.liveSeconds). Everything else
+ * (teams, skills, other divisions) is re-read every config.liveFullSeconds. Writes only
+ * happen when something changed, and phones pick them up the moment they land.
+ * Runs a little past the next hourly start; that run waits for this one, then carries on.
  */
 async function live(ctx) {
   const deadline = Date.now() + config.liveMinutes * 60e3;
-  const sigs = {}, seasons = {};
-  let rounds = 0;
+  const sigs = {}, seasons = {}, cache = {};
+  let rounds = 0, chores = Date.now();
   while (Date.now() < deadline) {
     const t = Date.now();
     const running = ctx.events.filter(e => liveNow(e, t));
@@ -352,15 +366,18 @@ async function live(ctx) {
     if (!rounds) console.log(`Live mode for ${running.map(e => e.sku).join(", ")}`);
     for (const e of running) {
       try {
-        const r = await syncEvent(e, { ours: true, ourNumber: ctx.team.number, season: seasons[e.id], lastSig: sigs[e.id] });
+        const fresh = cache[e.id] && t - cache[e.id].at < config.liveFullSeconds * 1000;
+        const r = await syncEvent(e, { ours: true, ourNumber: ctx.team.number, season: seasons[e.id], lastSig: sigs[e.id], reuse: fresh ? cache[e.id].parts : null });
         seasons[e.id] = r.season; sigs[e.id] = r.sig;
+        if (!fresh) cache[e.id] = { parts: r.parts, at: t };
         if (!r.unchanged && rounds) console.log(`  ${new Date().toISOString().slice(11, 19)} ${e.sku} updated`);
       } catch (err) { console.log(`  live ${e.sku}: ${err.message}`); }
     }
-    if (++rounds % 6 === 0) { await handleRequests(ctx); await writeStatus(ctx, { lastQuick: FieldValue.serverTimestamp() }); }
+    rounds++;
+    if (Date.now() - chores > 60e3) { chores = Date.now(); await handleRequests(ctx); await writeStatus(ctx, { lastQuick: FieldValue.serverTimestamp() }); }
     await sleep(Math.max(0, config.liveSeconds * 1000 - (Date.now() - t)));
   }
-  if (rounds) { await writeStatus(ctx, { lastQuick: FieldValue.serverTimestamp() }); console.log(`Live mode: ${rounds} rounds`); }
+  if (rounds) { await writeStatus(ctx, { lastQuick: FieldValue.serverTimestamp() }); console.log(`Live mode: ${rounds} rounds, ${requests} requests`); }
 }
 
 async function full() {

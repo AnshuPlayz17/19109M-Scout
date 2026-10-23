@@ -4,7 +4,7 @@ The team's scouting app. It runs entirely in the cloud for free. Nobody's laptop
 
 - **Website + database:** Firebase (free Spark plan): hosting, email/password accounts and the Firestore database.
 - **Data refresh:** a GitHub Actions job (`.github/workflows/sync.yml`) pulls results from RobotEvents:
-  - every 20 seconds while one of our events is running (8am–6pm on event days, in the event's own time zone, so Worlds in Dallas works too)
+  - every 5 seconds while one of our events is running (8am–6pm on event days, in the event's own time zone, so Worlds in Dallas works too). Each check reads only our division's matches and rankings (2 RobotEvents requests); teams, skills and other divisions are re-read once a minute. That's about 30 requests a minute, well under RobotEvents' limit, and the database is only written when a score actually changes, so the free Firebase quota isn't touched. Phones update the moment a write lands.
   - hourly the rest of the time
   - a full refresh every night
 - **Privacy:** every page needs an account, and an account needs the team code. Our autos and scouting notes are only readable by members.
