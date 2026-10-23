@@ -54,6 +54,31 @@ export const h = (tag, attrs = {}, ...kids) => {
 };
 
 /**
+ * Feedback on a submit button while a password or code is checked: the label turns into a
+ * spinning ring, which then closes into a ✓ (right) or turns into an ✗ (wrong).
+ *   const v = verdict(button); ... await v.done(ok)
+ * done(true) waits for the tick to draw before you move on; done(false) shows the cross, then
+ * puts the button back so they can try again.
+ */
+export function verdict(btn) {
+  const label = [...btn.childNodes];
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24"); svg.setAttribute("class", "verdict spin"); svg.setAttribute("aria-hidden", "true");
+  svg.innerHTML = '<circle class="ring" cx="12" cy="12" r="9.5"/><path class="tick" d="M7.5 12.4l3 3 6-6.4"/><path class="cross" d="M8.7 8.7l6.6 6.6M15.3 8.7l-6.6 6.6"/>';
+  btn.style.minWidth = `${btn.offsetWidth}px`;
+  btn.replaceChildren(svg); btn.classList.add("verdicting"); btn.setAttribute("aria-busy", "true");
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  return {
+    async done(ok) {
+      svg.classList.replace("spin", ok ? "ok" : "no"); btn.classList.add(ok ? "is-ok" : "is-no"); btn.setAttribute("aria-busy", "false");
+      btn.setAttribute("aria-label", ok ? "Correct" : "Wrong");
+      await wait(ok ? 650 : 900);
+      if (!ok) { btn.replaceChildren(...label); btn.classList.remove("verdicting", "is-no"); btn.removeAttribute("aria-label"); btn.style.minWidth = ""; }
+    },
+  };
+}
+
+/**
  * A password-style field with a Show / Hide button, so people can check what they typed.
  * Hidden by default. `what` names it for screen readers ("password", "team code").
  */
@@ -91,6 +116,8 @@ export function askAdmin(where, nickname = "") {
 
 const friendly = err => ({
   "auth/invalid-credential": "Wrong email or password.",
+  "auth/wrong-password": "Wrong email or password.",
+  "auth/user-not-found": "Wrong email or password.",
   "auth/invalid-email": "That email doesn't look right.",
   "auth/email-already-in-use": "That email already has an account. Sign in instead.",
   "auth/weak-password": "Use at least 6 characters for the password.",
@@ -114,25 +141,30 @@ function authScreen(root, user) {
       const passBox = secret(pass, "password");
       const nick = h("input", { type: "text", maxlength: 24, required: true, placeholder: "What the team calls you", value: vals.nick, oninput: keep("nick") });
       const code = h("input", { type: "password", required: true, autocomplete: "off", placeholder: "Ask a teammate", value: vals.code, oninput: keep("code") });
+      const submit = h("button", { class: "btn primary", type: "submit" }, mode === "signin" ? "Sign in" : "Join");
       const busy = b => form.querySelectorAll("button, input").forEach(x => { x.disabled = b; });
+      let check = null; // the submit button's spinner / tick / cross
       const join = async u => {
         await setDoc(doc(db, "members", u.uid), { nickname: nick.value.trim(), code: code.value.trim(), joinedAt: serverTimestamp() });
+        await check?.done(true);
         resolve(u);
       };
       const form = h("form", { class: "card", onsubmit: async e => {
         e.preventDefault(); msg.textContent = ""; busy(true);
+        check = verdict(submit);
         try {
           if (mode === "signin") {
             const { user: u } = await signInWithEmailAndPassword(auth, email.value.trim(), pass.value);
             const m = await getDoc(doc(db, "members", u.uid)).catch(() => null);
+            await check.done(true);
             if (m?.exists()) resolve(u); else { mode = "finish"; draw(); }
           } else if (mode === "join") {
             const { user: u } = await createUserWithEmailAndPassword(auth, email.value.trim(), pass.value);
-            try { await join(u); } catch (err) { mode = "finish"; draw(); root.querySelector(".error").textContent = friendly(err); }
+            try { await join(u); } catch (err) { await check.done(false); mode = "finish"; draw(); root.querySelector(".error").textContent = friendly(err); }
           } else {
             await join(auth.currentUser);
           }
-        } catch (err) { msg.textContent = friendly(err); busy(false); }
+        } catch (err) { await check.done(false); msg.textContent = friendly(err); busy(false); form.classList.remove("shake"); void form.offsetWidth; form.classList.add("shake"); }
       } },
         mode === "finish"
           ? [h("h2", { text: "Join the team" }), h("p", { class: "muted", text: `Signed in as ${auth.currentUser?.email}. Enter the team code to finish.` })]
@@ -142,7 +174,7 @@ function authScreen(root, user) {
         mode !== "signin" && h("label", { class: "field" }, "Nickname", nick),
         mode !== "signin" && h("div", { class: "field" }, h("span", {}, "Team code"), secret(code, "team code")),
         msg,
-        h("button", { class: "btn primary", type: "submit" }, mode === "signin" ? "Sign in" : "Join"),
+        submit,
         mode === "finish" && askAdmin("Joining the team", vals.nick),
         mode === "signin" && h("button", { class: "btn", type: "button", onclick: async () => {
           if (!email.value.trim()) { msg.textContent = "Type your email first."; return; }

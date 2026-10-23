@@ -524,6 +524,20 @@ main.page-pit { min-height: 100dvh; padding: clamp(14px, min(2.5vw, 3.5vh), 32px
 @media (min-width: 700px) { .sheet.unlock { top: 22vh; } }
 .sheet.unlock .head { margin-bottom: 0; }
 .shake { animation: shake 0.35s; }
+/* submit feedback: spinner, then a tick or a cross (verdict() in fb.js) */
+.btn.verdicting { pointer-events: none; transition: background-color 0.25s; }
+.btn.is-ok { background: var(--good); color: #fff; } .btn.is-no { background: var(--bad); color: #fff; }
+.verdict { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.verdict .ring { stroke-dasharray: 60 60; transform-origin: 12px 12px; }
+.verdict.spin .ring { stroke-dasharray: 16 60; animation: vspin 0.75s linear infinite; }
+.verdict .tick, .verdict .cross { stroke-dasharray: 20; stroke-dashoffset: 20; }
+.verdict.ok .ring { animation: vclose 0.25s ease-out; }
+.verdict.no .ring { animation: vclose 0.25s ease-out; opacity: 0.5; }
+.verdict.ok .tick, .verdict.no .cross { animation: vdraw 0.3s 0.18s ease-out forwards; }
+@keyframes vspin { to { transform: rotate(360deg); } }
+@keyframes vclose { from { stroke-dasharray: 16 60; } }
+@keyframes vdraw { to { stroke-dashoffset: 0; } }
+@media (prefers-reduced-motion: reduce) { .verdict.ok .tick, .verdict.no .cross { stroke-dashoffset: 0; } }
 .card.gate { max-width: 440px; width: 100%; align-self: center; margin-top: 4vh; padding: 24px; gap: 12px; }
 .gate-icon { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent-text); }
 .gate-icon svg { width: 22px; height: 22px; }

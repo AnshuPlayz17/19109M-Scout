@@ -1,5 +1,5 @@
 // 19109M Scout: events, teams, match predictions, scouting notes, autos, checklists and a match scorer.
-import { db, h, requireMember, signOut, auth, splash, hideSplash, rememberMember, secret, askAdmin } from "./fb.js";
+import { db, h, requireMember, signOut, auth, splash, hideSplash, rememberMember, secret, askAdmin, verdict } from "./fb.js";
 import { createBoard } from "./board.js";
 import {
   doc, getDoc, onSnapshot, collection, query, where, addDoc, setDoc, updateDoc, deleteDoc, serverTimestamp,
@@ -1058,7 +1058,10 @@ async function openUnlock() {
   const box = h("form", { class: "sheet unlock", role: "dialog", "aria-modal": "true", "aria-label": "Unlock pit display", onsubmit: async e => {
       e.preventDefault();
       const v = input.value.trim(); if (!v) return;
+      msg.textContent = "";
+      const fb = verdict(box.querySelector("button[type=submit]"));
       const ok = await check(v);
+      await fb.done(ok === true);
       if (ok !== true) { input.value = ""; box.classList.remove("shake"); void box.offsetWidth; box.classList.add("shake"); msg.textContent = ok; return; }
       pitLocked = false; store.set("pitLock", false); close();
       if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
@@ -1089,7 +1092,10 @@ function areaGate(title, why, { focus = true } = {}) {
   const form = h("form", { class: "card gate", onsubmit: async e => {
     e.preventDefault();
     const v = input.value.trim(); if (!v) return;
+    gateMsg = ""; document.querySelectorAll(".gate .error").forEach(m => { m.textContent = ""; }); // a new try clears the old "wrong"
+    const fb = verdict(form.querySelector("button[type=submit]"));
     const ok = await (await codeCheck()).check(v);
+    await fb.done(ok === true);
     if (ok !== true) { input.value = ""; gateMsg = ok; document.querySelectorAll(".gate .error").forEach(m => { m.textContent = ok; }); const f = document.querySelector(".gate") || form; f.classList.remove("shake"); void f.offsetWidth; f.classList.add("shake"); return; }
     gateMsg = "";
     store.set("areasOpenUntil", Date.now() + AREA_HOURS * 3600e3);
