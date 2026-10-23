@@ -6,6 +6,13 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 
 const root = document.getElementById("app");
+// Which game the app shows: this season's (Override) or last season's (Push Back). Each has its
+// own season data from the sync, scoring rules, field and whiteboard. Chosen in Settings.
+const GAMES = {
+  override: { key: "override", name: "Override", years: "2026–27", status: "status", index: "", suffix: "", field: "field.webp" },
+  pushback: { key: "pushback", name: "Push Back", years: "2025–26", status: "status-pushback", index: "pushback-", suffix: "__pushback", field: "field-pushback.svg" },
+};
+const G = GAMES[(() => { try { return JSON.parse(localStorage.getItem("19109m.game")); } catch { return null; } })()] || GAMES.override;
 const { user, member } = await requireMember(root);
 splash("Loading your events…");
 
@@ -32,13 +39,13 @@ function watch(key, ref, set) {
 }
 const watchEvent = id => watch(`e${id}`, doc(db, "events", String(id)), s => { S.events[id] = s.exists() ? s.data() : null; });
 const watchTeam = n => {
-  watch(`n${n}`, doc(db, "notes", n), s => { S.notes[n] = s.exists() ? s.data() : null; });
-  watch(`s${n}`, doc(db, "teamstats", n), s => { S.stats[n] = s.exists() ? s.data() : null; });
+  watch(`n${n}`, doc(db, "notes", n + G.suffix), s => { S.notes[n] = s.exists() ? s.data() : null; });
+  watch(`s${n}`, doc(db, "teamstats", n + G.suffix), s => { S.stats[n] = s.exists() ? s.data() : null; });
   watch(`c${n}`, query(collection(db, "scouting"), where("team", "==", n)), s => {
-    S.scouting[n] = s.docs.map(d => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) })).sort((a, b) => (b.at?.toMillis?.() || 0) - (a.at?.toMillis?.() || 0));
+    S.scouting[n] = s.docs.map(d => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) })).filter(x => (x.game || "override") === G.key).sort((a, b) => (b.at?.toMillis?.() || 0) - (a.at?.toMillis?.() || 0));
   });
 };
-watch("status", doc(db, "meta", "status"), s => {
+watch("status", doc(db, "meta", G.status), s => {
   S.status = s.exists() ? s.data() : null;
   for (const e of S.status?.ourEvents || []) watchEvent(e.id);
 });
@@ -52,16 +59,16 @@ const watchLists = () => watch("lists", collection(db, "checklists"), s => {
 async function loadIndex(kind) {
   if (S.index[kind]) return S.index[kind];
   S.index[kind] = [];
-  const key = `19109m.index.${kind}`;
+  const key = `19109m.index.${G.index}${kind}`;
   let cached = null;
   try { cached = JSON.parse(localStorage.getItem(key)); } catch {}
   if (cached?.items) { S.index[kind] = cached.items; refresh(); }
   try {
-    const meta = await getDoc(doc(db, "index", `${kind}Meta`));
+    const meta = await getDoc(doc(db, "index", `${G.index}${kind}Meta`));
     if (!meta.exists()) return S.index[kind];
     const stamp = meta.data().updatedAt?.toMillis?.() || 0;
     if (cached?.stamp === stamp && cached.items) return S.index[kind];
-    const parts = await Promise.all(Array.from({ length: meta.data().chunks }, (_, i) => getDoc(doc(db, "index", `${kind}-${i}`))));
+    const parts = await Promise.all(Array.from({ length: meta.data().chunks }, (_, i) => getDoc(doc(db, "index", `${G.index}${kind}-${i}`))));
     S.index[kind] = parts.flatMap(p => (p.exists() ? p.data().items : []));
     try { localStorage.setItem(key, JSON.stringify({ stamp, items: S.index[kind] })); } catch {}
   } catch (err) { console.warn("index", kind, err.code); }
@@ -72,7 +79,7 @@ async function loadIndex(kind) {
 async function request(kind, key) {
   S.requested.add(`${kind}:${key}`);
   refresh();
-  await addDoc(collection(db, "requests"), { kind, key: String(key), by: user.uid, at: serverTimestamp() });
+  await addDoc(collection(db, "requests"), { kind, key: String(key), game: G.key, by: user.uid, at: serverTimestamp() });
 }
 
 // ---------------------------------------------------------------- helpers
@@ -286,7 +293,8 @@ function pickTeam({ title, teams, onPick }) {
 const views = {};
 
 views.home = () => {
-  const out = [h("header", { class: "teamhead" }, h("h1", {}, S.status?.team?.number || "19109M"), h("p", {}, S.status?.team?.name || "UTS Circuit Breakers"))];
+  const out = [h("header", { class: "teamhead" }, h("h1", {}, S.status?.team?.number || "19109M"), h("p", {}, S.status?.team?.name || "UTS Circuit Breakers"),
+    h("a", { class: `gamechip ${G.key}`, href: "#/settings", title: "Change game in Settings" }, `${G.name} · ${G.years}`))];
   if (S.status === undefined) return [...out, ...skeleton(150, 200, 160)];
   if (S.status === null) {
     out.push(notice("On GitHub, open Actions → Scout sync → Run workflow, mode full. Your events show up here when it finishes.", "Waiting for the first data sync", "refresh"));
@@ -349,7 +357,7 @@ views.home = () => {
   return [...out, h("div", { class: "cols" }, h("div", { class: "col" }, ...left), h("div", { class: "col" }, ...right))];
 };
 
-let evQuery = "", evFilter = "region", evWhen = "upcoming";
+let evQuery = "", evFilter = "region", evWhen = G.key === "override" ? "upcoming" : "any"; // last season is all in the past
 views.events = () => {
   if (evFilter !== "ours") loadIndex("events");
   const region = S.status?.team?.region || "Ontario";
@@ -536,7 +544,10 @@ views.teams = () => {
     seg([ev && ["event", "This event"], ["region", region], ["all", "Everyone"]].filter(Boolean), scope, v => { teamScope = v; render(); }), list, count, extra];
 };
 
-const AUTO_OPTIONS = ["No auto", "Toggle only", "Toggle + preload", "Midfield rush", "Several pins", "Interfered / broke"];
+const AUTO_OPTIONS = G.key === "pushback"
+  ? ["No auto", "Blocks in Long Goal", "Blocks in Center Goal", "Moved blocks only", "Parked", "Interfered / broke"]
+  : ["No auto", "Toggle only", "Toggle + preload", "Midfield rush", "Several pins", "Interfered / broke"];
+const PIECE = G.key === "pushback" ? "block" : "pin"; // what an auto scores, for the scouting form
 const draft = {};
 views.team = n => {
   watchTeam(n);
@@ -591,16 +602,16 @@ views.team = n => {
     form.querySelector("button[type=submit]").disabled = true;
     try {
       await addDoc(collection(db, "scouting"), { team: n, event: String(d.event || ""), match: d.match.trim().slice(0, 20), autoPins: Number(d.autoPins) || 0,
-        auto: d.auto, rating: d.rating, notes: d.notes.trim().slice(0, 1000), by: user.uid, nickname: S.nickname, at: serverTimestamp() });
+        auto: d.auto, rating: d.rating, notes: d.notes.trim().slice(0, 1000), game: G.key, by: user.uid, nickname: S.nickname, at: serverTimestamp() });
       draft[n] = null; render();
     } catch (err) { msg.textContent = `Couldn't save: ${err.code || err.message}`; form.querySelector("button[type=submit]").disabled = false; }
   } },
     h("h3", {}, `Scout ${n}`),
     h("div", { class: "grid2", style: "align-items:end" },
       h("label", { class: "field" }, "Match", h("input", { value: d.match, placeholder: "Q12", maxlength: 20, autocapitalize: "characters", oninput: e => { d.match = e.target.value; } })),
-      h("div", { class: "field" }, "Pins in auto", h("div", { class: "stepper" },
-        h("button", { type: "button", "aria-label": "One fewer pin", onclick: () => stepPins(-1) }, "−"), pins,
-        h("button", { type: "button", "aria-label": "One more pin", onclick: () => stepPins(1) }, "+")))),
+      h("div", { class: "field" }, `${PIECE[0].toUpperCase() + PIECE.slice(1)}s in auto`, h("div", { class: "stepper" },
+        h("button", { type: "button", "aria-label": `One fewer ${PIECE}`, onclick: () => stepPins(-1) }, "−"), pins,
+        h("button", { type: "button", "aria-label": `One more ${PIECE}`, onclick: () => stepPins(1) }, "+")))),
     h("div", { class: "field" }, "Auto", opts),
     h("div", { class: "field" }, "How good", stars), // not a <label>: it would re-click the first star
     h("label", { class: "field" }, "Notes", h("textarea", { maxlength: 1000, placeholder: "Driving, defense, what they score, anything breaking", oninput: e => { d.notes = e.target.value; } }, d.notes)),
@@ -609,7 +620,7 @@ views.team = n => {
   if (sc.length) right.push(section(`Our scouting · ★ ${avg.toFixed(1)}`), group(...sc.map(x => h("div", { class: "note" },
     h("div", { class: "meta" }, h("b", {}, x.nickname), h("span", { class: "muted small" }, [x.match, ago(x.at)].filter(Boolean).join(" · "))),
     h("span", { class: "starline", "aria-label": `${x.rating} of 5 stars` }, "★".repeat(x.rating) + "☆".repeat(5 - x.rating)),
-    x.auto || x.autoPins ? h("span", { class: "small muted" }, [x.auto, x.autoPins ? `${x.autoPins} auto pins` : ""].filter(Boolean).join(" · ")) : null,
+    x.auto || x.autoPins ? h("span", { class: "small muted" }, [x.auto, x.autoPins ? `${x.autoPins} auto ${PIECE}s` : ""].filter(Boolean).join(" · ")) : null,
     x.notes ? h("p", {}, x.notes) : null,
     x.by === user.uid ? h("button", { class: "btn small danger", style: "align-self:flex-start", onclick: () => { if (confirm("Delete this note?")) deleteDoc(doc(db, "scouting", x.id)); } }, "Delete") : null))));
   right.push(group(lrow({ href: reTeam(n), title: "Open on VEX Events", external: true })));
@@ -656,6 +667,8 @@ function fieldSvg(auto, thumb) {
   return svg;
 }
 views.autos = (id) => {
+  if (G.key !== "override") return [pagehead("Autos"), notice(`Our autos are written for Override, this season's game. Switch the game back to Override in Settings to see them.`, `No ${G.name} autos`, "autos"),
+    group(lrow({ href: "#/settings", title: "Change game", sub: `Showing ${G.name} ${G.years}` }))];
   watchAutos();
   if (S.autos === undefined) return [pagehead("Autos"), ...skeleton(300)];
   const a = id && S.autos.autos.find(x => x.id === id);
@@ -805,12 +818,35 @@ views.checklist = () => {
 };
 
 // ---- match scorer + timer
-const PTS = { alliancePin: 5, yellowPin: 10, midfield: 8 };
-// Override has 63 pins and each half scores on its own, so a match can't have more than 126
-// scored halves between both alliances. Two robots per alliance can end in midfield.
-const FIELD_HALVES = 126, MIDFIELD_MAX = 2;
-const halvesUsed = () => ["red", "blue"].reduce((s, c) => s + score[c].alliancePin + score[c].yellowPin, 0);
-const score = { red: { alliancePin: 0, yellowPin: 0, midfield: 0 }, blue: { alliancePin: 0, yellowPin: 0, midfield: 0 }, bonus: "" };
+// Scoring for each game. `pool` counters share a limit across both alliances (what physically
+// fits on the field); `max` is per alliance; `points` turns a count into points.
+const RULES = {
+  // Override: 63 pins, each visible half scores on its own (126 halves at most between both
+  // alliances); two robots per alliance can end in midfield.
+  override: { bonus: 12, items: [
+    { k: "alliancePin", label: "Alliance pin halves", each: 5, pool: "halves" },
+    { k: "yellowPin", label: "Owned yellow pin halves", each: 10, pool: "halves" },
+    { k: "midfield", label: "Robots in midfield", each: 8, max: 2 }],
+    pools: { halves: 126 },
+    note: left => left.halves ? `Each visible pin half scores. ${left.halves} of 126 halves left (63 pins on the field); up to 2 robots per alliance in midfield.`
+      : "All 126 pin halves are counted (63 pins on the field, 2 halves each). Take some off to add more." },
+  // Push Back: 88 blocks but only 44 places in goals (Long Goals 15 each, Center Upper and Lower
+  // 7 each). Each control zone (2 Long Goal zones, Center Upper, Center Lower) goes to one
+  // alliance. Parking: 8 points for one robot, 30 for both.
+  pushback: { bonus: 10, items: [
+    { k: "blocks", label: "Blocks in goals", each: 3, pool: "blocks" },
+    { k: "longZone", label: "Long Goal zones controlled", each: 10, pool: "longZone" },
+    { k: "upper", label: "Center Upper controlled", each: 8, pool: "upper" },
+    { k: "lower", label: "Center Lower controlled", each: 6, pool: "lower" },
+    { k: "park", label: "Robots parked", points: n => [0, 8, 30][n], max: 2, hint: "8 for one, 30 for both" }],
+    pools: { blocks: 44, longZone: 2, upper: 1, lower: 1 },
+    note: left => `Goals hold 44 blocks in all: Long Goals 15 each, Center Upper and Lower 7 each. ${left.blocks} places left. Each control zone goes to one alliance.` },
+};
+const R = RULES[G.key];
+const score = { red: {}, blue: {}, bonus: "" };
+for (const c of ["red", "blue"]) for (const it of R.items) score[c][it.k] = 0;
+const poolUsed = pool => ["red", "blue"].reduce((s, c) => s + R.items.filter(it => it.pool === pool).reduce((t, it) => t + score[c][it.k], 0), 0);
+const poolsLeft = () => Object.fromEntries(Object.entries(R.pools).map(([p, n]) => [p, n - poolUsed(p)]));
 const timer = { phase: "ready", left: 15, running: false, last: 0, raf: 0 };
 const PHASE_LEN = { ready: 15, auto: 15, autoDone: 15, driver: 105, done: 105 };
 let audio = null;
@@ -843,7 +879,7 @@ function tick(t) {
 const startTimer = (phase, secs) => { timer.phase = phase; if (secs) timer.left = secs; timer.running = true; timer.last = performance.now(); beep(988); timer.raf = requestAnimationFrame(tick); render(); };
 const pauseTimer = () => { timer.running = false; cancelAnimationFrame(timer.raf); render(); };
 views.scorer = () => {
-  const total = c => Object.keys(PTS).reduce((s, k) => s + score[c][k] * PTS[k], 0) + (score.bonus === c ? 12 : 0);
+  const total = c => R.items.reduce((s, it) => s + (it.points ? it.points(score[c][it.k]) : score[c][it.k] * it.each), 0) + (score.bonus === c ? R.bonus : 0);
   const phaseLabel = { ready: "Ready", auto: "Autonomous", autoDone: "Autonomous over", driver: "Driver control", done: "Match over" }[timer.phase];
   const buttons = timer.running ? [h("button", { class: "btn", onclick: pauseTimer }, "Pause")]
     : timer.phase === "ready" ? [h("button", { class: "btn primary", onclick: () => startTimer("auto", 15) }, "Start auto · 0:15")]
@@ -854,16 +890,16 @@ views.scorer = () => {
   svgEl("circle", { class: "track", cx: size / 2, cy: size / 2, r: rad, fill: "none", "stroke-width": stroke }, dial);
   const arc = svgEl("circle", { id: "clock-arc", cx: size / 2, cy: size / 2, r: rad, fill: "none", stroke: "var(--accent)", "stroke-width": stroke, "stroke-linecap": "round", "stroke-dasharray": `${circ * (timer.left / PHASE_LEN[timer.phase])} ${circ}` }, dial);
   arc.dataset.c = circ;
-  const room = (c, k) => (k === "midfield" ? MIDFIELD_MAX - score[c][k] : FIELD_HALVES - halvesUsed());
-  const counter = (c, k, label) => h("div", { class: "counter" }, h("span", { class: "lbl" }, label, h("small", {}, ` · ${PTS[k]} each`)),
+  const room = (c, it) => (it.pool ? R.pools[it.pool] - poolUsed(it.pool) : it.max - score[c][it.k]);
+  const counter = (c, it) => { const k = it.k, label = it.label; return h("div", { class: "counter" }, h("span", { class: "lbl" }, label, h("small", {}, ` · ${it.hint || `${it.each} each`}`)),
     h("div", { class: "stepper" },
       h("button", { type: "button", "aria-label": `Fewer ${label}, ${c}`, disabled: score[c][k] <= 0, onclick: () => { score[c][k] = Math.max(0, score[c][k] - 1); render(); } }, "−"),
       h("output", {}, score[c][k]),
-      h("button", { type: "button", "aria-label": `More ${label}, ${c}`, disabled: room(c, k) <= 0, onclick: () => { if (room(c, k) > 0) score[c][k]++; render(); } }, "+")));
+      h("button", { type: "button", "aria-label": `More ${label}, ${c}`, disabled: room(c, it) <= 0, onclick: () => { if (room(c, it) > 0) score[c][k]++; render(); } }, "+"))); };
   const sideBox = c => h("div", { class: `team ${c}` }, h("div", { class: "row between" }, h("h3", {}, c === "red" ? "Red" : "Blue"), h("span", { class: `total${changed(`score${c}`, total(c)) ? " flash" : ""}`, "aria-live": "polite" }, total(c))),
-    counter(c, "alliancePin", "Alliance pin halves"), counter(c, "yellowPin", "Owned yellow pin halves"), counter(c, "midfield", "Robots in midfield"));
+    R.items.map(it => counter(c, it)));
   const lead = total("red") - total("blue");
-  return [pagehead("Scorer"),
+  return [pagehead("Scorer", `${G.name} scoring`),
     h("div", { class: "cols" },
       h("div", { class: "col" }, card(h("div", { class: "clockwrap" }, dial, h("div", { class: "inner" }, h("span", { class: "phase" }, phaseLabel),
           h("span", { id: "clock", class: `timer${timer.phase === "driver" && timer.left <= 30 ? " low" : ""}`, role: "timer" }, fmtClock(timer.left)))),
@@ -871,11 +907,9 @@ views.scorer = () => {
           h("button", { class: "btn", onclick: () => { pauseTimer(); Object.assign(timer, { phase: "ready", left: 15 }); render(); } }, "Reset")))),
       h("div", { class: "col" }, h("div", { class: "board" }, sideBox("red"), sideBox("blue")),
         card(h("div", { class: "row between" }, h("h3", {}, "Autonomous bonus"), h("span", { class: "muted small" }, lead === 0 ? "Tied" : `${lead > 0 ? "Red" : "Blue"} leads by ${Math.abs(lead)}`)),
-          seg([["", "None"], ["red", "Red +12"], ["blue", "Blue +12"]], score.bonus, v => { score.bonus = v; render(); }, "red-blue")),
-        h("button", { class: "btn plain", onclick: () => { for (const c of ["red", "blue"]) for (const k in PTS) score[c][k] = 0; score.bonus = ""; render(); } }, "Clear scores"),
-        h("p", { class: "footnote" }, halvesUsed() >= FIELD_HALVES
-          ? "All 126 pin halves are counted (63 pins on the field, 2 halves each). Take some off to add more."
-          : `Each visible pin half scores. ${FIELD_HALVES - halvesUsed()} of 126 halves left (63 pins on the field); up to 2 robots per alliance in midfield.`)))];
+          seg([["", "None"], ["red", `Red +${R.bonus}`], ["blue", `Blue +${R.bonus}`]], score.bonus, v => { score.bonus = v; render(); }, "red-blue")),
+        h("button", { class: "btn plain", onclick: () => { for (const c of ["red", "blue"]) for (const it of R.items) score[c][it.k] = 0; score.bonus = ""; render(); } }, "Clear scores"),
+        h("p", { class: "footnote" }, R.note(poolsLeft()))))];
 };
 
 // ---- win predictor
@@ -928,7 +962,8 @@ const fullscreenBtn = () => document.fullscreenEnabled
   ? h("button", { type: "button", class: "wb-btn", "aria-label": "Full screen", title: "Full screen", onclick: () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {})) }, icon("expand"), h("span", {}, "Full screen"))
   : null;
 views.board = () => {
-  board ||= createBoard({ h, icon, onIdle: () => { if (redrawAfterStroke) { redrawAfterStroke = false; refresh(); } } });
+  board ||= createBoard({ h, icon, field: G.field, key: G.key === "override" ? "19109m.board" : `19109m.board.${G.key}`, starts: G.key === "pushback" ? [0.3, 0.7] : undefined,
+    onIdle: () => { if (redrawAfterStroke) { redrawAfterStroke = false; refresh(); } } });
   // Robots are named after our next match: us and our partner, then the opponents.
   const fe = focusEvent(), ev = fe && S.events[fe.id];
   const om = ev?.ourMatches?.find(x => !ev.matches.find(m => m.id === x.id)?.scored);
@@ -1051,7 +1086,7 @@ views.pit = () => {
     h("button", { type: "button", class: "wb-btn", "aria-label": "Close pit display", title: "Close", onclick: exitTo }, icon("close"), h("span", {}, "Close")));
 
   return [head, h("div", { class: "pit-grid" }, nextCard, rankings, stats, matches, insta),
-    h("p", { class: "pit-foot" }, live ? `Live · results checked every 5 seconds · last change ${ago(ev?.updatedAt)}` : `Updated ${ago(S.status?.lastQuick)}`), controls];
+    h("p", { class: "pit-foot" }, live ? `${G.name} · live · results checked every 5 seconds · last change ${ago(ev?.updatedAt)}` : `${G.name} ${G.years} · updated ${ago(S.status?.lastQuick || S.status?.lastFull)}`), controls];
 };
 
 views.more = () => [pagehead("More"),
@@ -1075,6 +1110,14 @@ views.settings = () => {
       try { await updateDoc(doc(db, "members", user.uid), { nickname: v }); S.nickname = v; rememberMember(user.uid, { nickname: v }); msg.textContent = "Saved. New notes use this name."; } catch (err) { msg.textContent = `Couldn't save: ${err.code}`; }
     } }, nick, msg, h("button", { class: "btn primary", type: "submit" }, "Save")),
     h("p", { class: "footnote" }, "Shown on your scouting notes."),
+    section("Game"),
+    seg(Object.values(GAMES).map(g => [g.key, `${g.name} ${g.years}`]), G.key, v => {
+      if (v === G.key) return;
+      store.set("game", v);
+      document.body.append(h("div", { id: "splash", role: "status" }, h("div", { class: "mark", "aria-hidden": "true" }, "M"), h("div", { class: "name" }, `Switching to ${GAMES[v].name}…`)));
+      location.hash = "#/"; location.reload();
+    }),
+    h("p", { class: "footnote" }, "Events, teams, rankings, the scorer and the whiteboard all follow the game. Push Back is last season's, for looking back. Saved on this device."),
     section("Appearance"),
     seg([["system", "System"], ["light", "Light"], ["dark", "Dark"]], store.get("theme", "system"), v => { store.set("theme", v); transition("theme", () => { applyTheme(v); render(); }); }),
     h("p", { class: "footnote" }, "System follows your phone's light or dark mode. Saved on this device."),

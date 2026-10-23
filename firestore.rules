@@ -23,7 +23,8 @@ service cloud.firestore {
     match /scouting/{id} {
       allow read: if isMember();
       allow create: if isMember()
-        && request.resource.data.keys().hasOnly(['team', 'event', 'match', 'autoPins', 'auto', 'rating', 'notes', 'by', 'nickname', 'at'])
+        && request.resource.data.keys().hasOnly(['team', 'event', 'match', 'autoPins', 'auto', 'rating', 'notes', 'by', 'nickname', 'at', 'game'])
+        && (!('game' in request.resource.data) || request.resource.data.game in ['override', 'pushback'])
         && request.resource.data.by == request.auth.uid
         && request.resource.data.team is string && request.resource.data.team.size() <= 12
         && request.resource.data.event is string && request.resource.data.event.size() <= 20
@@ -39,7 +40,8 @@ service cloud.firestore {
     // "Load this event" / "Refresh" buttons; the sync job picks these up.
     match /requests/{id} {
       allow create: if isMember()
-        && request.resource.data.keys().hasOnly(['kind', 'key', 'by', 'at'])
+        && request.resource.data.keys().hasOnly(['kind', 'key', 'by', 'at', 'game'])
+        && (!('game' in request.resource.data) || request.resource.data.game in ['override', 'pushback'])
         && request.resource.data.kind in ['team', 'event']
         && request.resource.data.key is string && request.resource.data.key.size() <= 20
         && request.resource.data.by == request.auth.uid;

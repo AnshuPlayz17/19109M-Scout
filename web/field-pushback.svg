@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-4 -4 152 152" width="1520" height="1520">
+  <!-- Push Back (2025-26) field diagram for the whiteboard, in inches (12 ft square). Element
+       positions are from the VEX simulator's field details; it's a planning diagram, not the
+       official drawing. Red alliance on the left, blue on the right. -->
+  <rect x="-4" y="-4" width="152" height="152" rx="3" fill="#cfd2d6"/>
+  <rect x="0" y="0" width="144" height="144" fill="#3a3d43"/>
+  <g stroke="#2e3136" stroke-width="0.5">
+    <path d="M24 0V144M48 0V144M72 0V144M96 0V144M120 0V144M0 24H144M0 48H144M0 72H144M0 96H144M0 120H144"/>
+  </g>
+  <!-- alliance walls -->
+  <rect x="-4" y="-4" width="4" height="152" fill="#d23a3f"/>
+  <rect x="144" y="-4" width="4" height="152" fill="#2f6fdb"/>
+  <!-- park zones, centred on each alliance wall -->
+  <rect x="0" y="62.6" width="16.9" height="18.9" fill="rgba(210,58,63,0.22)" stroke="#e5484d" stroke-width="0.8"/>
+  <rect x="127.1" y="62.6" width="16.9" height="18.9" fill="rgba(47,111,219,0.22)" stroke="#4a8cff" stroke-width="0.8"/>
+  <!-- loaders on the alliance walls, in line with the long goals -->
+  <g stroke="#f2f2f2" stroke-width="0.8">
+    <circle cx="4.1" cy="24.8" r="2.6" fill="#d23a3f"/><circle cx="4.1" cy="119.2" r="2.6" fill="#d23a3f"/>
+    <circle cx="139.9" cy="24.8" r="2.6" fill="#2f6fdb"/><circle cx="139.9" cy="119.2" r="2.6" fill="#2f6fdb"/>
+  </g>
+  <!-- long goals, two tiles from centre, with their control zones (between the white lines) -->
+  <g>
+    <rect x="47.6" y="22.3" width="48.8" height="5" rx="1.5" fill="#8a8f98" stroke="#f2f2f2" stroke-width="0.6"/>
+    <rect x="47.6" y="116.7" width="48.8" height="5" rx="1.5" fill="#8a8f98" stroke="#f2f2f2" stroke-width="0.6"/>
+    <path d="M65 21.3V28.3M79 21.3V28.3M65 115.7V122.7M79 115.7V122.7" stroke="#ffffff" stroke-width="0.9"/>
+  </g>
+  <!-- center goals: upper and lower cross in the middle -->
+  <g stroke-linecap="round">
+    <line x1="63.9" y1="80.1" x2="80.1" y2="63.9" stroke="#b9bec6" stroke-width="4.2"/>
+    <line x1="63.9" y1="63.9" x2="80.1" y2="80.1" stroke="#70757e" stroke-width="4.2"/>
+    <circle cx="72" cy="72" r="2.2" fill="#f2c94c"/>
+  </g>
+  <g font-family="Barlow, system-ui, sans-serif" font-size="3.2" fill="#d6d9de" text-anchor="middle">
+    <text x="72" y="19.5">LONG GOAL</text><text x="72" y="128">LONG GOAL</text>
+    <text x="72" y="58.5">CENTER GOAL</text>
+    <text x="8.4" y="88" font-size="2.6">PARK</text><text x="135.6" y="88" font-size="2.6">PARK</text>
+  </g>
+</svg>

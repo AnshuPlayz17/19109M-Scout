@@ -17,6 +17,16 @@ import { computeOPR, computeRatings, predictMatches, predictorAccuracy, statsNot
 const here = new URL(".", import.meta.url);
 const config = JSON.parse(await readFile(new URL("../config.json", here), "utf8"));
 const MODE = process.env.SYNC_MODE || "quick";
+// Which game's data: this season's (Override) or last season's (Push Back). Each keeps its own
+// status, season lists, team stats and notes; event documents are shared (event ids are unique).
+const GAMES = {
+  override: { key: "override", season: "Override", status: "meta/status", index: "", suffix: "" },
+  pushback: { key: "pushback", season: "Push Back", status: "meta/status-pushback", index: "pushback-", suffix: "__pushback" },
+};
+let G = GAMES[process.env.SYNC_GAME || "override"];
+if (!G) throw new Error(`SYNC_GAME must be one of: ${Object.keys(GAMES).join(", ")}`);
+const statsDoc = n => db.doc(`teamstats/${n}${G.suffix}`);
+const noteDoc = n => db.doc(`notes/${n}${G.suffix}`);
 const DAY = 86400e3;
 const now = Date.now();
 
@@ -94,17 +104,20 @@ const asApiMatch = m => ({ id: m.id, round: m.round, scored: m.scored,
 async function writeChunks(prefix, items, size) {
   const parts = chunk(items, size);
   const batch = db.batch();
-  parts.forEach((p, i) => batch.set(db.doc(`index/${prefix}-${i}`), { items: p }));
-  batch.set(db.doc(`index/${prefix}Meta`), { chunks: parts.length, count: items.length, updatedAt: FieldValue.serverTimestamp() });
+  parts.forEach((p, i) => batch.set(db.doc(`index/${G.index}${prefix}-${i}`), { items: p }));
+  batch.set(db.doc(`index/${G.index}${prefix}Meta`), { chunks: parts.length, count: items.length, updatedAt: FieldValue.serverTimestamp() });
   await batch.commit();
 }
 
 // ---------- Season, our team, our events ----------
 
 async function context() {
-  const seasons = await all("seasons", { program: [config.programId], active: "true" });
+  // The season named after the game; this season's game falls back to the newest active season.
+  const seasons = await all("seasons", { program: [config.programId] });
   seasons.sort((a, b) => ms(b.start) - ms(a.start));
-  const season = seasons.find(s => ms(s.start) <= now) || seasons[0];
+  const season = seasons.find(s => s.name?.includes(G.season))
+    || (G.key === "override" && (seasons.find(s => s.active && ms(s.start) <= now) || seasons.find(s => s.active)));
+  if (!season) throw new Error(`No ${G.season} season found`);
   const [team] = (await get("teams", { number: [config.team], program: [config.programId] })).data;
   if (!team) throw new Error(`Team ${config.team} not found`);
   const events = await all(`teams/${team.id}/events`, { season: [season.id] });
@@ -130,7 +143,7 @@ async function syncTeamStats(teamId, number, seasonId) {
     if (k.type === "driver") s.bestDriver = Math.max(s.bestDriver, k.score || 0);
     if (k.type === "programming") s.bestProg = Math.max(s.bestProg, k.score || 0);
   }
-  await db.doc(`teamstats/${number}`).set({ ...s, updatedAt: FieldValue.serverTimestamp() });
+  await statsDoc(number).set({ ...s, updatedAt: FieldValue.serverTimestamp() });
   return s;
 }
 
@@ -138,8 +151,8 @@ async function readTeamStats(numbers) {
   const out = {};
   for (const part of chunk(numbers, 300)) {
     if (!part.length) continue;
-    const snaps = await db.getAll(...part.map(n => db.doc(`teamstats/${n}`)));
-    for (const s of snaps) if (s.exists) out[s.id] = s.data();
+    const snaps = await db.getAll(...part.map(statsDoc));
+    snaps.forEach((s, i) => { if (s.exists) out[part[i]] = s.data(); });
   }
   return out;
 }
@@ -216,7 +229,7 @@ async function scoutingFor(numbers) {
   for (const part of chunk(numbers, 30)) {
     if (!part.length) continue;
     const snap = await db.collection("scouting").where("team", "in", part).get();
-    for (const d of snap.docs) (out[d.get("team")] ||= []).push(d.data());
+    for (const d of snap.docs) if ((d.get("game") || "override") === G.key) (out[d.get("team")] ||= []).push(d.data());
   }
   return out;
 }
@@ -270,7 +283,7 @@ async function writeNotes(event, season, { useAI, aiBudget = 0 }) {
   const existing = {};
   for (const part of chunk(numbers, 300)) {
     if (!part.length) continue;
-    for (const s of await db.getAll(...part.map(n => db.doc(`notes/${n}`)))) if (s.exists) existing[s.id] = s.data();
+    (await db.getAll(...part.map(noteDoc))).forEach((s, i) => { if (s.exists) existing[part[i]] = s.data(); });
   }
   const batch = db.batch();
   let aiCalls = 0;
@@ -296,7 +309,7 @@ async function writeNotes(event, season, { useAI, aiBudget = 0 }) {
         }
       }
     }
-    batch.set(db.doc(`notes/${n}`), note, { merge: true });
+    batch.set(noteDoc(n), note, { merge: true });
   }
   await batch.commit();
   if (aiCalls) console.log(`  ${aiCalls} AI notes for ${event.sku}`);
@@ -309,7 +322,8 @@ async function handleRequests(ctx) {
   const snap = await db.collection("requests").orderBy("at").limit(50).get();
   const seen = new Set();
   for (const r of snap.docs) {
-    const { kind, key } = r.data();
+    const { kind, key, game = "override" } = r.data();
+    if (game !== G.key) continue; // the other game's requests are handled in its own pass
     if (seen.has(`${kind}:${key}`)) { await r.ref.delete(); continue; }
     seen.add(`${kind}:${key}`);
     try {
@@ -318,7 +332,7 @@ async function handleRequests(ctx) {
         const [t] = (await get("teams", { number: [String(key)], program: [config.programId] })).data;
         if (t) {
           await syncTeamStats(t.id, t.number, ctx.season.id);
-          await db.doc(`teamstats/${t.number}`).set({ info: compactTeam(t) }, { merge: true }); // name, school, city for the app
+          await statsDoc(t.number).set({ info: compactTeam(t) }, { merge: true }); // name, school, city for the app
         }
         console.log(`  request: team ${key}${t ? "" : " (not found)"}`);
       } else if (kind === "event") {
@@ -336,7 +350,7 @@ async function handleRequests(ctx) {
 // ---------- Modes ----------
 
 async function writeStatus(ctx, extra) {
-  await db.doc("meta/status").set({
+  await db.doc(G.status).set({
     season: ctx.season, team: ctx.team,
     ourEvents: ctx.events.map(compactEvent),
     ...extra,
@@ -350,7 +364,8 @@ async function quick() {
   const lastFull = (await db.doc("meta/status").get()).get("lastFull")?.toMillis?.() || 0;
   if (Date.now() - lastFull > config.fullEveryHours * 3600e3 && !ctx.events.some(e => liveNow(e, Date.now()))) {
     console.log(`Last full refresh ${lastFull ? `${Math.round((Date.now() - lastFull) / 3600e3)} h ago` : "never"}; doing one now`);
-    return full();
+    await full();
+    return pastSeason({ wasLive: false });
   }
   const active = ctx.events.filter(e => ms(e.start) - now < config.quickDaysAhead * DAY && now - ms(e.end) < config.quickDaysAfterEnd * DAY);
   for (const e of active) await syncEvent(e, { ours: true, ourNumber: ctx.team.number });
@@ -364,7 +379,8 @@ async function quick() {
   }
   await handleRequests(ctx);
   await writeStatus(ctx, { lastQuick: FieldValue.serverTimestamp() });
-  await live(ctx);
+  const wasLive = await live(ctx);
+  await pastSeason({ wasLive });
 }
 
 /**
@@ -397,6 +413,25 @@ async function live(ctx) {
     await sleep(Math.max(0, config.liveSeconds * 1000 - (Date.now() - t)));
   }
   if (rounds) { await writeStatus(ctx, { lastQuick: FieldValue.serverTimestamp() }); console.log(`Live mode: ${rounds} rounds, ${requests} requests`); }
+  return rounds > 0;
+}
+
+/**
+ * Last season's game (Push Back) for the app's game switch. Its results don't change any more,
+ * so it gets a full refresh once a week (config.pastSeasonEveryDays) when nothing of ours is
+ * live, and team/event lookups asked for in Push Back mode are answered every run.
+ */
+async function pastSeason({ wasLive }) {
+  const pending = (await db.collection("requests").limit(50).get()).docs.some(d => d.get("game") === "pushback");
+  const last = (await db.doc(GAMES.pushback.status).get()).get("lastFull")?.toMillis?.() || 0;
+  const due = Date.now() - last > config.pastSeasonEveryDays * DAY && !wasLive;
+  if (!pending && !due) return;
+  G = GAMES.pushback;
+  try {
+    if (due) { console.log(`Push Back: last full refresh ${last ? `${Math.round((Date.now() - last) / DAY)} days ago` : "never"}; doing one now`); await full(); }
+    else await handleRequests(await context());
+  } catch (err) { console.log(`Push Back: ${err.message}`); } // never let last season break this season's sync
+  finally { G = GAMES.override; }
 }
 
 async function full() {
@@ -457,6 +492,7 @@ if (MODE === "autos") await autos();
 else {
   if (!process.env.ROBOTEVENTS_TOKEN) throw new Error("ROBOTEVENTS_TOKEN is not set");
   if (MODE === "full") await full();
-  else await quick();
+  else if (G.key === "override") await quick();
+  else await handleRequests(await context()); // last season: nothing is live, just answer lookups
 }
-console.log(`Done (${MODE}, ${requests} RobotEvents requests)`);
+console.log(`Done (${G.season} ${MODE}, ${requests} VEX Events requests)`);

@@ -12,6 +12,11 @@ on:
         default: full
         type: choice
         options: [quick, full]
+      game:
+        description: "override (this season) or pushback (last season)"
+        default: override
+        type: choice
+        options: [override, pushback]
 
 concurrency:
   group: scout-sync
@@ -50,6 +55,7 @@ jobs:
         run: node sync.mjs
         env:
           SYNC_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.mode || github.event.schedule == '17 7 * * *' && 'full' || 'quick' }}
+          SYNC_GAME: ${{ github.event_name == 'workflow_dispatch' && inputs.game || 'override' }}
           ROBOTEVENTS_TOKEN: ${{ secrets.ROBOTEVENTS_TOKEN }}
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           TEAM_JOIN_CODE: ${{ secrets.TEAM_JOIN_CODE }}

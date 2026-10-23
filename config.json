@@ -6,6 +6,7 @@
   "quickDaysAfterEnd": 2,
   "fullStatsMinutes": 12,
   "fullEveryHours": 23,
+  "pastSeasonEveryDays": 7,
   "aiNotesPerRun": 150,
   "liveSeconds": 5,
   "liveFullSeconds": 60,

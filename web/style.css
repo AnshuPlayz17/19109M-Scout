@@ -219,6 +219,8 @@ header.top .seg { padding: 2px; } header.top .seg > * { min-height: 28px; paddin
 .teamhead { padding: 8px 2px 0; }
 .teamhead h1 { font: 700 2.75rem/0.95 var(--font-num); letter-spacing: 0.005em; }
 .teamhead p { color: var(--muted); font-weight: 500; margin-top: 4px; }
+.gamechip { display: inline-flex; margin-top: 8px; padding: 3px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; background: var(--surface-2); color: var(--muted); border: 1px solid var(--line); }
+.gamechip.pushback { background: rgba(224, 168, 0, 0.14); color: var(--warn); border-color: transparent; }
 .evcard { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
 .evcard:not(:has(.glance)) { padding-bottom: 14px; }
 .evcard .evtop { display: flex; justify-content: space-between; align-items: center; }
