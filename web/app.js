@@ -293,6 +293,16 @@ views.home = () => {
       r ? glance([[`#${r.rank}`, "Rank", "accent"], [`${r.wins}-${r.losses}-${r.ties}`, "Record"], [r.wp, "WP"], [o?.matches >= 3 ? Math.round(o.opr) : "–", "OPR"]]) : null));
   }
   if (fe && ev === undefined) left.push(...skeleton(200, 160));
+  // Before the match list is out: our season so far, and who to look out for at the event.
+  if (!ev?.ourMatches?.length) {
+    watchTeam(us());
+    const st = S.stats[us()];
+    if (st) left.push(section("Our season"), glance([[`${st.wins}-${st.losses}-${st.ties}`, "Record"], [st.events, st.events === 1 ? "Event" : "Events"],
+      [st.bestRank ? `#${st.bestRank}` : "–", "Best rank"], [st.bestDriver + st.bestProg || "–", "Best skills"]]));
+    const rivals = (ev?.teams || []).filter(t => t.number !== us()).sort((a, b) => (ev.ratings?.[b.number]?.rating ?? 0) - (ev.ratings?.[a.number]?.rating ?? 0));
+    if (rivals.length) left.push(section("Teams to watch", h("a", { href: `#/event/${ev.id}/teams` }, `All ${ev.teams.length}`)), group(...rivals.slice(0, 6).map(t => teamRow(t, ev))),
+      h("p", { class: "footnote" }, "Strongest first, from season record and skills. Updates with match results once the event starts."));
+  }
   if (ev?.ourMatches?.length) {
     const ours = ev.ourMatches.map(om => ({ om, m: ev.matches.find(x => x.id === om.id) })).filter(x => x.m);
     const todo = ours.filter(x => !x.m.scored), done = ours.filter(x => x.m.scored).reverse();
