@@ -456,9 +456,9 @@ main.page-board { height: 100dvh; overflow: hidden; }
 @media (max-width: 700px) { .wb-group.acts .wb-btn span { display: none; } .wb-group + .wb-group { padding-left: 8px; } .wb-bar { gap: 8px; } .wb-swatch { width: 24px; height: 24px; } }
 
 /* ---------- pit display: big type for reading across a pit */
-main.page-pit { min-height: 100dvh; padding: clamp(14px, 2.5vw, 32px); gap: clamp(12px, 1.6vw, 22px); font-size: clamp(16px, 1.15vw, 22px); }
+main.page-pit { min-height: 100dvh; padding: clamp(14px, min(2.5vw, 3.5vh), 32px); gap: clamp(10px, min(1.6vw, 2.2vh), 22px); font-size: clamp(13px, min(1.15vw, 2vh), 22px); }
 .pit-head { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 24px; }
-.pit-team b { display: block; font: 700 clamp(2.5rem, 5vw, 5.5rem)/0.9 var(--font-num); }
+.pit-team b { display: block; font: 700 clamp(2.25rem, min(5vw, 9vh), 5.5rem)/0.9 var(--font-num); }
 .pit-team span { color: var(--muted); font-weight: 500; font-size: 1.1em; }
 .pit-status { justify-self: center; text-align: center; display: flex; flex-direction: column; gap: 4px; padding: 10px 22px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); max-width: 100%; }
 .pit-status span { font-size: 0.8em; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
@@ -469,8 +469,8 @@ main.page-pit { min-height: 100dvh; padding: clamp(14px, 2.5vw, 32px); gap: clam
 .pit-status.urgent span { color: rgba(255, 255, 255, 0.85); } .pit-status.urgent span::before { background: #fff; }
 @keyframes urge { 50% { box-shadow: 0 0 0 10px var(--accent-soft); } }
 .pit-clock { text-align: right; display: flex; flex-direction: column; }
-.pit-clock b { font: 700 clamp(2rem, 3.6vw, 4rem)/1 var(--font-num); font-variant-numeric: tabular-nums; }
-.pit-clock span { color: var(--muted); font-size: 0.85em; max-width: 26ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pit-clock b { font: 700 clamp(1.75rem, min(3.6vw, 6.5vh), 4rem)/1 var(--font-num); font-variant-numeric: tabular-nums; }
+.pit-clock span { color: var(--muted); font-size: 0.85em; white-space: nowrap; }
 .pit-grid { flex: 1; display: grid; gap: inherit; grid-template-columns: 1.25fr 1fr 0.85fr; grid-template-areas: "next rank matches" "stats stats insta"; align-items: stretch; }
 .pit-card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: clamp(14px, 1.4vw, 24px); display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .pit-card .eyebrow { font-size: 0.75em; }
@@ -478,10 +478,10 @@ main.page-pit { min-height: 100dvh; padding: clamp(14px, 2.5vw, 32px); gap: clam
 .pit-next::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 6px; background: var(--g, var(--faint)); }
 .pit-next.red { --g: var(--red); } .pit-next.blue { --g: var(--blue); }
 .pit-next-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
-.pit-big { font: 700 clamp(4rem, 9vw, 9rem)/0.9 var(--font-num); margin-top: 4px; }
-.pit-big.small { font-size: clamp(2rem, 3.2vw, 3.4rem); line-height: 1.05; }
+.pit-big { font: 700 clamp(3rem, min(9vw, 15vh), 9rem)/0.9 var(--font-num); margin-top: 4px; }
+.pit-big.small { font-size: clamp(1.75rem, min(3.2vw, 5.5vh), 3.4rem); line-height: 1.05; }
 .pit-when { color: var(--muted); font-size: 1.1em; font-variant-numeric: tabular-nums; }
-.pit-next .chance.lg b { font-size: clamp(3rem, 6vw, 6rem); }
+.pit-next .chance.lg b { font-size: clamp(2.5rem, min(6vw, 10vh), 6rem); }
 .pit-vs { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: auto; padding-top: 14px; border-top: 1px solid var(--sep); }
 .pit-vs > div { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .pit-who b { display: block; font: 700 2em/1 var(--font-num); }
@@ -494,28 +494,35 @@ main.page-pit { min-height: 100dvh; padding: clamp(14px, 2.5vw, 32px); gap: clam
 .pit-rank small { color: var(--muted); }
 .pit-rank tr.us td { background: var(--accent-soft); } .pit-rank tr.us .tn { color: var(--accent-text); }
 .pit-stats { grid-area: stats; display: grid; grid-template-columns: repeat(5, 1fr); background: var(--surface); border: 1px solid var(--line); border-radius: 16px; }
-.pit-stats > div { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 14px 6px; }
+.pit-stats > div { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: clamp(8px, 1.6vh, 14px) 6px; }
 .pit-stats > div + div { border-left: 1px solid var(--sep); }
-.pit-stats b { font: 700 clamp(2rem, 3.4vw, 3.6rem)/1 var(--font-num); font-variant-numeric: tabular-nums; }
+.pit-stats b { font: 700 clamp(1.75rem, min(3.4vw, 6vh), 3.6rem)/1 var(--font-num); font-variant-numeric: tabular-nums; }
 .pit-stats > div:first-child b { color: var(--accent-text); }
 .pit-stats span { color: var(--muted); font-size: 0.8em; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
 .pit-matches { grid-area: matches; }
 .pit-m { display: grid; grid-template-columns: 3.2em 1fr auto; align-items: center; gap: 10px; padding: 6px 0 6px 10px; border-left: 4px solid var(--c); }
 .pit-m.red { --c: var(--red); } .pit-m.blue { --c: var(--blue); }
 .pit-m b { font: 700 1.35em/1 var(--font-num); }
-.pit-m-teams { color: var(--muted); font-size: 0.85em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pit-m-teams { color: var(--muted); font-size: 0.85em; line-height: 1.25; min-width: 0; }
 .pit-m-res { font: 600 1.05em/1 var(--font-num); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .pit-m-res.won { color: var(--good); } .pit-m-res.lost { color: var(--bad); }
 .pit-insta { grid-area: insta; flex-direction: row; align-items: center; gap: 18px; }
-.pit-qr { width: clamp(84px, 8vw, 140px); aspect-ratio: 1; flex: none; padding: 8px; background: #fff; border-radius: 10px; }
+.pit-qr { width: clamp(72px, min(8vw, 13vh), 140px); aspect-ratio: 1; flex: none; padding: 8px; background: #fff; border-radius: 10px; }
 .pit-qr svg { width: 100%; height: 100%; display: block; }
-.pit-insta > div:last-child { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pit-insta > div:last-child { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; container-type: inline-size; }
 .pit-ig { display: inline-flex; align-items: center; gap: 6px; font-size: 0.8em; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
 .pit-ig svg { width: 1.2em; height: 1.2em; }
-.pit-insta b { font: 700 clamp(1.4rem, 2.2vw, 2.4rem)/1.1 var(--font-num); overflow-wrap: anywhere; }
+.pit-insta b { font: 700 min(clamp(1.4rem, 2.2vw, 2.4rem), 13cqi)/1.1 var(--font-num); white-space: nowrap; } /* @19109robotics is ~7.2em wide: never wider than its box */
 .pit-foot { color: var(--muted); font-size: 0.8em; text-align: center; }
 .pit-controls { position: fixed; right: 14px; bottom: 14px; display: flex; gap: 8px; opacity: 0.25; transition: opacity 0.2s; }
 .pit-controls:hover, .pit-controls:focus-within { opacity: 1; }
+/* On a laptop or TV the display is exactly one screen: cards share the height, and the
+   rankings show as many rows as fit (app.js drops the rest, never our row). */
+@media (min-width: 1001px) {
+  main.page-pit { height: 100dvh; min-height: 0; overflow: hidden; }
+  .pit-grid { min-height: 0; grid-template-rows: minmax(0, 1fr) auto; }
+  .pit-card { min-height: 0; overflow: hidden; }
+}
 @media (max-width: 1000px) {
   .pit-head { grid-template-columns: 1fr auto; } .pit-status { grid-column: 1 / -1; grid-row: 2; justify-self: stretch; }
   .pit-grid { grid-template-columns: 1fr; grid-template-areas: "next" "stats" "matches" "rank" "insta"; }

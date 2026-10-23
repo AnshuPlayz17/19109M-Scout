@@ -942,6 +942,16 @@ import("./vendor/qrcode.js").then(({ default: qrcode }) => {
   if (lastName === "pit") refresh();
 }).catch(() => {});
 
+/** Fits the pit display to one screen: drop ranking rows (never ours) and older matches until nothing is cut off. */
+function fitPit() {
+  if (!matchMedia("(min-width: 1001px)").matches) return;
+  const over = el => el && el.scrollHeight > el.clientHeight + 1;
+  const rank = root.querySelector(".pit-rank");
+  while (over(rank)) { const rows = [...rank.querySelectorAll("tr:not(.us)")]; if (rows.length <= 3) break; rows.pop().remove(); }
+  const list = root.querySelector(".pit-matches");
+  while (over(list)) { const ms = list.querySelectorAll(".pit-m"); if (ms.length <= 2) break; ms[ms.length - 1].remove(); }
+}
+addEventListener("resize", () => { if (lastName === "pit") refresh(); });
 /** Where we are right now, in a few words, for the top of the pit display. */
 function pitStatus(fe, ev, next) {
   if (!fe) return ["Off season", ""];
@@ -970,7 +980,7 @@ views.pit = () => {
   const head = h("header", { class: "pit-head" },
     h("div", { class: "pit-team" }, h("b", {}, us()), h("span", {}, S.status?.team?.name || "UTS Circuit Breakers")),
     h("div", { class: `pit-status${live ? " live" : ""}${status === "Queue now" ? " urgent" : ""}` }, h("span", {}, status), h("b", {}, detail || fe?.name || "")),
-    h("div", { class: "pit-clock" }, h("b", {}, now.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })), h("span", {}, fe?.name || S.status?.season?.name || "")));
+    h("div", { class: "pit-clock" }, h("b", {}, now.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })), h("span", {}, now.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }))));
 
   const who = n => h("div", { class: "pit-who" }, h("b", { class: n === us() ? "us-t" : null }, n), h("span", {}, n === us() ? "Us" : teamName(n) || ""));
   const nextCard = next
@@ -1102,6 +1112,7 @@ function draw(parts, name, fresh) {
     document.body.classList.remove("has-nav");
     root.replaceChildren(h("main", { class: `immersive page-${name}` }, views[name](...parts.slice(1))));
     fitBadges(root);
+    if (name === "pit") fitPit();
     if (fresh) scrollTo(0, 0);
     return;
   }
