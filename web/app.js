@@ -160,6 +160,8 @@ const until = d => {
   const d2 = Math.round(m / 1440);
   return d2 === 1 ? "tomorrow" : `in ${d2} days`;
 };
+// How often the sync checks VEX Events (it says in its status): faster on match days.
+const checkEvery = live => { const n = (live ? S.status?.liveSeconds : S.status?.idleSeconds) || 5; return n === 1 ? "second" : `${n} seconds`; };
 const pct = p => `${Math.round(p * 100)}%`;
 const signed = x => (x > 0 ? "+" : "") + x;
 const where_ = e => [e.city, e.region].filter(Boolean).join(", ");
@@ -355,7 +357,7 @@ views.home = () => {
     tool("#/predict", "predict", "Predictor", "Any four teams"), tool("#/autos", "autos", "Autos", "Our routes"),
     tool("#/board", "board", "Whiteboard", "Draw on the field"), tool("#/pit", "pit", "Pit display", "Leave it at the pit")));
   right.push(section("Our events", h("a", { href: "#/events" }, "All events")), group(...ourEvents().map(eventRow)));
-  right.push(h("p", { class: "footnote" }, (fe && isLive(fe)) || S.status.alwaysOn ? `Checking for new results every 5 seconds · ${S.status.season?.name || ""}` : `${S.status.season?.name || ""} · updated ${ago(S.status.lastQuick)}`));
+  right.push(h("p", { class: "footnote" }, (fe && isLive(fe)) || S.status.alwaysOn ? `Checking for new results every ${checkEvery(fe && isLive(fe))} · ${S.status.season?.name || ""}` : `${S.status.season?.name || ""} · updated ${ago(S.status.lastQuick)}`));
   return [...out, h("div", { class: "cols" }, h("div", { class: "col" }, ...left), h("div", { class: "col" }, ...right))];
 };
 
@@ -1141,7 +1143,7 @@ views.pit = () => {
     : null;
 
   return [head, h("div", { class: "pit-grid" }, nextCard, rankings, stats, matches, insta),
-    relock, h("p", { class: "pit-foot" }, live || S.status?.alwaysOn ? `${G.name}${live ? " · live" : ""} · results checked every 5 seconds · last change ${ago(ev?.updatedAt)}` : `${G.name} ${G.years} · updated ${ago(S.status?.lastQuick || S.status?.lastFull)}`), controls];
+    relock, h("p", { class: "pit-foot" }, live || S.status?.alwaysOn ? `${G.name}${live ? " · live" : ""} · results checked every ${checkEvery(live)} · last change ${ago(ev?.updatedAt)}` : `${G.name} ${G.years} · updated ${ago(S.status?.lastQuick || S.status?.lastFull)}`), controls];
 };
 
 views.more = () => [pagehead("More"),
@@ -1181,8 +1183,8 @@ views.settings = () => {
       lrow({ info: true, title: "Last refresh", trail: ago(S.status?.lastQuick) }),
       lrow({ info: true, title: "Last full refresh", trail: ago(S.status?.lastFull) }),
       lrow({ info: true, title: "Season", trail: S.status?.season?.name || "—" })),
-    h("p", { class: "footnote" }, S.status?.alwaysOn ? "Results come from VEX Events every 5 seconds, all the time, and in full each night. New scores show up here the moment they're saved."
-      : "Results come from VEX Events: every 5 seconds while one of our events is live, hourly otherwise, and in full each night. New scores show up here the moment they're saved."),
+    h("p", { class: "footnote" }, S.status?.alwaysOn ? `Results come from VEX Events every ${checkEvery(true)} on match days, every ${checkEvery(false)} the rest of the time, and in full each night. New scores show up here the moment they're saved.`
+      : `Results come from VEX Events: every ${checkEvery(true)} while one of our events is live, hourly otherwise, and in full each night. New scores show up here the moment they're saved.`),
     section("Account"),
     group(lrow({ info: true, title: user.email }),
       h("button", { type: "button", class: "lrow noicon", onclick: () => signOut(auth) }, h("span", { class: "tx" }, h("b", { style: "color:var(--bad)" }, "Sign out")), h("span"), h("span")))];

@@ -3,7 +3,7 @@ name: Scout sync
 
 on:
   schedule:
-    - cron: "41 * * * *"   # hourly backup; normally each run starts the next one (always on, every 5 s)
+    - cron: "41 * * * *"   # hourly backup; normally each run starts the next one (always on: every 2 s on match days, 3 s otherwise)
     - cron: "17 7 * * *"   # nightly full refresh (3am Toronto)
   workflow_dispatch:
     inputs:
@@ -25,7 +25,7 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    # Always on (config.json alwaysOn): a run checks every 5 s for just under 6 hours (GitHub's
+    # Always on (config.json alwaysOn): a run checks every few seconds for just under 6 hours (GitHub's
     # job limit), then the last step starts the next run. The hourly schedule is the backup;
     # a queued backup run that's no longer needed shows as cancelled, which is harmless.
     timeout-minutes: 355

@@ -353,7 +353,8 @@ async function writeStatus(ctx, extra) {
   await db.doc(G.status).set({
     season: ctx.season, team: ctx.team,
     ourEvents: ctx.events.map(compactEvent),
-    alwaysOn: G.key === "override" && !!config.alwaysOn, // the app says "every 5 seconds" when on
+    // How often the app can say it checks: every liveSeconds at our events, idleSeconds otherwise.
+    alwaysOn: G.key === "override" && !!config.alwaysOn, liveSeconds: config.liveSeconds, idleSeconds: config.idleSeconds,
     ...extra,
   }, { merge: true });
 }
@@ -391,11 +392,12 @@ async function watchedEvents(ctx) {
 }
 
 /**
- * The 5-second loop. While one of our events is running it re-checks that event's division
- * every config.liveSeconds; teams, skills and other divisions are re-read every
+ * The fast loop. While one of our events is running (match days) it re-checks that event's
+ * division every config.liveSeconds; teams, skills and other divisions are re-read every
  * config.liveFullSeconds. With config.alwaysOn it keeps going when nothing is live, checking
- * our upcoming events (and events opened in the app) one per round, so the app is never more
- * than a few seconds behind. Lookups from the app are answered as soon as they're asked
+ * our upcoming events (and events opened in the app) one per round every config.idleSeconds.
+ * A round is 2 VEX Events requests and requests are spaced 0.65 s apart (get()), so the
+ * ~100/minute limit holds at any setting; 2 s on match days is about 65 a minute. Lookups from the app are answered as soon as they're asked
  * (a listener, not polling, so it costs no database reads while idle). Writes happen only when
  * something changed. The run ends a little before GitHub's 6-hour limit (config.runMinutes);
  * the workflow then starts the next one.
@@ -438,10 +440,10 @@ async function live(ctx) {
           ctx.watched = await watchedEvents(ctx);
         } catch (err) { console.log(`  refresh: ${err.message}`); }
       }
-      await sleep(Math.max(0, config.liveSeconds * 1000 - (Date.now() - t)));
+      await sleep(Math.max(0, (running.length ? config.liveSeconds : config.idleSeconds) * 1000 - (Date.now() - t)));
     }
   } finally { unsub(); }
-  if (rounds) { await writeStatus(ctx, { lastQuick: FieldValue.serverTimestamp() }); console.log(`5-second loop: ${rounds} rounds, ${requests} requests`); }
+  if (rounds) { await writeStatus(ctx, { lastQuick: FieldValue.serverTimestamp() }); console.log(`Fast loop: ${rounds} rounds, ${requests} requests`); }
   return rounds > 0;
 }
 
