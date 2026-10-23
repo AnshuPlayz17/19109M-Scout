@@ -1,5 +1,6 @@
 // 19109M Scout: events, teams, match predictions, scouting notes, autos, checklists and a match scorer.
 import { db, h, requireMember, signOut, auth, splash, hideSplash, rememberMember } from "./fb.js";
+import { createBoard } from "./board.js";
 import {
   doc, getDoc, onSnapshot, collection, query, where, addDoc, setDoc, updateDoc, deleteDoc, serverTimestamp,
 } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
@@ -97,6 +98,15 @@ const ICONS = {
   calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
   download: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
+  board: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 15c2-4 4 2 6-2s3-4 4-3"/><path d="M14.5 6.5l3 3"/>',
+  pit: '<rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M6.5 13.5l3-3 2.5 2 4.5-4.5"/>',
+  undo: '<path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/>',
+  redo: '<path d="M15 14l5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h3"/>',
+  trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+  robot: '<rect x="5" y="7" width="14" height="12" rx="2"/><path d="M12 3v4M9 12h.01M15 12h.01M9 16h6"/>',
+  expand: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+  close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  insta: '<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.3" cy="6.7" r="1" fill="currentColor"/>',
 };
 const icon = (name, cls = "ic") => {
   const s = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -332,7 +342,8 @@ views.home = () => {
   const tool = (href, ic, label, sub) => h("a", { class: "tool", href }, h("span", { class: "tico" }, icon(ic)), h("span", { class: "tx" }, h("b", {}, label), h("span", {}, sub)));
   right.push(h("div", { class: "tools" },
     tool("#/checklist", "checklist", "Checklist", "Before each match"), tool("#/scorer", "scorer", "Scorer", "Timer and points"),
-    tool("#/predict", "predict", "Predictor", "Any four teams"), tool("#/autos", "autos", "Autos", "Our routes")));
+    tool("#/predict", "predict", "Predictor", "Any four teams"), tool("#/autos", "autos", "Autos", "Our routes"),
+    tool("#/board", "board", "Whiteboard", "Draw on the field"), tool("#/pit", "pit", "Pit display", "Leave it at the pit")));
   right.push(section("Our events", h("a", { href: "#/events" }, "All events")), group(...ourEvents().map(eventRow)));
   right.push(h("p", { class: "footnote" }, fe && isLive(fe) ? `Live: checking for new results every 5 seconds · ${S.status.season?.name || ""}` : `${S.status.season?.name || ""} · updated ${ago(S.status.lastQuick)}`));
   return [...out, h("div", { class: "cols" }, h("div", { class: "col" }, ...left), h("div", { class: "col" }, ...right))];
@@ -888,11 +899,137 @@ views.predict = eid => {
   return out;
 };
 
+// ---- whiteboard: one board for the whole session, kept across redraws so drawing is never lost
+const IMMERSIVE = new Set(["board", "pit"]);
+let board = null, redrawAfterStroke = false;
+const exitTo = () => { if (document.fullscreenElement) document.exitFullscreen?.(); location.hash = wide.matches ? "#/" : "#/more"; };
+const fullscreenBtn = () => document.fullscreenEnabled
+  ? h("button", { type: "button", class: "wb-btn", "aria-label": "Full screen", title: "Full screen", onclick: () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {})) }, icon("expand"), h("span", {}, "Full screen"))
+  : null;
+views.board = () => {
+  board ||= createBoard({ h, icon, onIdle: () => { if (redrawAfterStroke) { redrawAfterStroke = false; refresh(); } } });
+  // Robots are named after our next match: us and our partner, then the opponents.
+  const fe = focusEvent(), ev = fe && S.events[fe.id];
+  const om = ev?.ourMatches?.find(x => !ev.matches.find(m => m.id === x.id)?.scored);
+  board.setTeams({ us: us(), partner: om?.partners?.[0], opponents: om?.opponents, color: om?.color || "red" });
+  return [h("div", { class: "wb-head" },
+      h("button", { type: "button", class: "back", onclick: exitTo }, icon("back"), h("span", {}, "Done")),
+      h("div", { class: "wb-title" }, h("b", {}, "Whiteboard"), om ? h("span", {}, `${shortName(om.name)} · ${om.color === "red" ? "Red" : "Blue"} alliance`) : null),
+      fullscreenBtn()),
+    board.el];
+};
+
+// ---- pit display: a full-screen dashboard for a laptop or TV at our pit
+let wakeLock = null, pitTimer = 0;
+function pitMode(on) {
+  // Keep the screen on and the clock ticking while the pit display is up.
+  if (on && !pitTimer) {
+    pitTimer = setInterval(refresh, 15e3);
+    navigator.wakeLock?.request("screen").then(l => { wakeLock = l; }).catch(() => {});
+    document.addEventListener("visibilitychange", relock);
+  } else if (!on && pitTimer) {
+    clearInterval(pitTimer); pitTimer = 0;
+    wakeLock?.release().catch(() => {}); wakeLock = null;
+    document.removeEventListener("visibilitychange", relock);
+  }
+}
+function relock() { if (!document.hidden && pitTimer) navigator.wakeLock?.request("screen").then(l => { wakeLock = l; }).catch(() => {}); }
+const INSTAGRAM = "19109robotics";
+let qr = null;
+import("./vendor/qrcode.js").then(({ default: qrcode }) => {
+  const q = qrcode(0, "M"); q.addData(`https://instagram.com/${INSTAGRAM}`); q.make();
+  qr = q.createSvgTag({ cellSize: 4, margin: 0, scalable: true });
+  if (lastName === "pit") refresh();
+}).catch(() => {});
+
+/** Where we are right now, in a few words, for the top of the pit display. */
+function pitStatus(fe, ev, next) {
+  if (!fe) return ["Off season", ""];
+  if (!isLive(fe)) return ms(fe.start) > Date.now() ? [`Next event ${until(fe.start)}`, fmtDates(fe)] : ["Event finished", fmtDates(fe)];
+  if (!ev?.matches?.length) return ["At the event", "Waiting for the match list"];
+  if (next) {
+    const mins = (ms(next.m.scheduled) - Date.now()) / 60e3;
+    if (!Number.isFinite(mins)) return ["Up next", shortName(next.m.name)];
+    if (mins > 10) return ["Next match", `${shortName(next.m.name)} ${until(next.m.scheduled)}`];
+    if (mins > -2) return ["Queue now", `${shortName(next.m.name)} on ${next.m.field || "the field"}`];
+    return ["On the field", `${shortName(next.m.name)} (running ${Math.round(-mins)} min behind schedule)`];
+  }
+  return ev.ourMatches?.length ? ["Qualifications done", "Alliance selection and eliminations"] : ["At the event", ""];
+}
+
+views.pit = () => {
+  const fe = S.status ? focusEvent() : null, ev = fe && S.events[fe.id];
+  const ours = ev?.ourMatches?.map(om => ({ om, m: ev.matches.find(x => x.id === om.id) })).filter(x => x.m) || [];
+  const todo = ours.filter(x => !x.m.scored), done = ours.filter(x => x.m.scored).reverse();
+  const next = todo[0];
+  const r = ev?.rankings?.find(x => x.team === us()), o = ev?.oprs?.[us()], sk = ev?.skills?.find(x => x.team === us());
+  const [status, detail] = pitStatus(fe, ev, next);
+  const now = new Date();
+  const live = fe && isLive(fe);
+
+  const head = h("header", { class: "pit-head" },
+    h("div", { class: "pit-team" }, h("b", {}, us()), h("span", {}, S.status?.team?.name || "UTS Circuit Breakers")),
+    h("div", { class: `pit-status${live ? " live" : ""}${status === "Queue now" ? " urgent" : ""}` }, h("span", {}, status), h("b", {}, detail || fe?.name || "")),
+    h("div", { class: "pit-clock" }, h("b", {}, now.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })), h("span", {}, fe?.name || S.status?.season?.name || "")));
+
+  const who = n => h("div", { class: "pit-who" }, h("b", { class: n === us() ? "us-t" : null }, n), h("span", {}, n === us() ? "Us" : teamName(n) || ""));
+  const nextCard = next
+    ? h("section", { class: `pit-card pit-next ${next.om.color}` },
+      h("div", { class: "pit-next-top" },
+        h("div", {}, h("span", { class: `eyebrow ${next.om.color}-t` }, `Next match · ${next.om.color === "red" ? "Red" : "Blue"} alliance`),
+          h("div", { class: "pit-big" }, shortName(next.m.name)),
+          h("span", { class: "pit-when" }, [next.m.scheduled && `${fmtTime(next.m.scheduled)} · ${until(next.m.scheduled)}`, next.m.field].filter(Boolean).join(" · "))),
+        next.om.win !== null ? ring(next.om.win, { label: "to win", cls: "lg" }) : null),
+      h("div", { class: "pit-vs" },
+        h("div", {}, h("span", { class: "eyebrow" }, "With"), who(us()), next.om.partners.map(who)),
+        h("div", {}, h("span", { class: "eyebrow" }, "Against"), next.om.opponents.map(who))))
+    : h("section", { class: "pit-card pit-next" }, h("span", { class: "eyebrow" }, fe ? (live ? "Next match" : "Next event") : "Season"),
+      h("div", { class: "pit-big small" }, fe ? (live ? "No match scheduled" : fe.name) : "No events yet"),
+      fe ? h("span", { class: "pit-when" }, [fmtDates(fe), where_(fe)].filter(Boolean).join(" · ")) : null);
+
+  const stats = h("div", { class: "pit-stats" }, [[r ? `#${r.rank}` : "–", "Rank"], [r ? `${r.wins}-${r.losses}-${r.ties}` : "–", "Record"], [r ? r.wp : "–", "WP"],
+    [o?.matches >= 3 ? Math.round(o.opr) : "–", "OPR"], [sk ? sk.total : "–", "Skills"]].map(([v, l]) => h("div", {}, h("b", {}, v), h("span", {}, l))));
+
+  const mini = (m, om) => {
+    const ourScore = m[om.color].score, theirs = m[om.color === "red" ? "blue" : "red"].score;
+    return h("div", { class: `pit-m ${om.color}` }, h("b", {}, shortName(m.name)),
+      h("span", { class: "pit-m-teams" }, `with ${om.partners.join(", ") || "—"} vs ${om.opponents.join(", ")}`),
+      m.scored ? h("span", { class: `pit-m-res ${ourScore > theirs ? "won" : ourScore < theirs ? "lost" : ""}` }, `${ourScore > theirs ? "W" : ourScore < theirs ? "L" : "T"} ${ourScore}–${theirs}`)
+        : h("span", { class: "pit-m-res" }, fmtTime(m.scheduled) || (om.win !== null ? pct(om.win) : "")));
+  };
+  const matches = h("section", { class: "pit-card pit-matches" },
+    h("span", { class: "eyebrow" }, "Coming up"),
+    todo.length > 1 ? todo.slice(1, 4).map(x => mini(x.m, x.om)) : h("p", { class: "muted" }, todo.length ? "That's our last scheduled match." : "Nothing scheduled yet."),
+    h("span", { class: "eyebrow", style: "margin-top:10px" }, "Results"),
+    done.length ? done.slice(0, 3).map(x => mini(x.m, x.om)) : h("p", { class: "muted" }, "No results yet."));
+
+  const rk = (ev?.rankings || []).slice().sort((a, b) => a.rank - b.rank);
+  const shown = rk.slice(0, 10);
+  if (r && r.rank > 10) shown.push(r);
+  const rankings = h("section", { class: "pit-card pit-rank" }, h("span", { class: "eyebrow" }, rk.length ? `Rankings · ${ev.name}` : "Rankings"),
+    rk.length ? h("table", {}, h("tbody", {}, shown.map(x => h("tr", { class: x.team === us() ? "us" : null },
+      h("td", { class: "num" }, x.rank), h("td", {}, h("span", { class: "tn" }, x.team), h("small", {}, teamName(x.team))), h("td", { class: "num" }, `${x.wins}-${x.losses}-${x.ties}`), h("td", { class: "num" }, `${x.wp} WP`)))))
+      : h("p", { class: "muted" }, "Rankings show up after the first qualification matches."));
+
+  const insta = h("section", { class: "pit-card pit-insta" },
+    qr ? h("div", { class: "pit-qr", "aria-hidden": "true" }) : null,
+    h("div", {}, h("span", { class: "pit-ig" }, icon("insta"), "Follow us"), h("b", {}, `@${INSTAGRAM}`), h("span", { class: "muted" }, "Scan to open our Instagram")));
+  if (qr) insta.querySelector(".pit-qr").innerHTML = qr;
+
+  const controls = h("div", { class: "pit-controls" }, fullscreenBtn(),
+    h("button", { type: "button", class: "wb-btn", "aria-label": "Close pit display", title: "Close", onclick: exitTo }, icon("close"), h("span", {}, "Close")));
+
+  return [head, h("div", { class: "pit-grid" }, nextCard, rankings, stats, matches, insta),
+    h("p", { class: "pit-foot" }, live ? `Live · results checked every 5 seconds · last change ${ago(ev?.updatedAt)}` : `Updated ${ago(S.status?.lastQuick)}`), controls];
+};
+
 views.more = () => [pagehead("More"),
   group(
     lrow({ href: "#/checklist", ic: "checklist", title: "Checklist", sub: "Before each match, packing list, your own" }),
     lrow({ href: "#/scorer", ic: "scorer", title: "Scorer", sub: "Match timer and score counter" }),
-    lrow({ href: "#/predict", ic: "predict", title: "Predictor", sub: "Win chance for any four teams" })),
+    lrow({ href: "#/predict", ic: "predict", title: "Predictor", sub: "Win chance for any four teams" }),
+    lrow({ href: "#/board", ic: "board", title: "Whiteboard", sub: "Draw plays on the field with our alliance" }),
+    lrow({ href: "#/pit", ic: "pit", title: "Pit display", sub: "Full-screen dashboard to leave at the pit" })),
   group(
     lrow({ href: "#/settings", ic: "settings", title: "Settings", sub: `Signed in as ${S.nickname}` }),
     lrow({ href: reTeam(us()), ic: "ext", title: `${us()} on RobotEvents`, external: true }))];
@@ -926,13 +1063,13 @@ views.settings = () => {
 // Five tabs on phones; the sidebar on wide screens lists everything.
 const NAV = [["home", "Home", ""], ["events", "Events", "events"], ["teams", "Teams", "teams"], ["autos", "Autos", "autos"], ["more", "More", "more"]];
 const NAV_WIDE = [["home", "Home", ""], ["events", "Events", "events"], ["teams", "Teams", "teams"], ["autos", "Autos", "autos"], ["checklist", "Checklist", "checklist"],
-  ["scorer", "Scorer", "scorer"], ["predict", "Predictor", "predict"], ["settings", "Settings", "settings"]];
-const TAB_OF = { event: "events", match: "events", team: "teams", checklist: "more", scorer: "more", predict: "more", settings: "more" };
+  ["scorer", "Scorer", "scorer"], ["predict", "Predictor", "predict"], ["board", "Whiteboard", "board"], ["pit", "Pit display", "pit"], ["settings", "Settings", "settings"]];
+const TAB_OF = { event: "events", match: "events", team: "teams", checklist: "more", scorer: "more", predict: "more", settings: "more", board: "more", pit: "more" };
 const BACK = { event: ["Events", "#/events"], match: ["Back"], team: ["Back"], checklist: ["More", "#/more"], scorer: ["More", "#/more"], predict: ["More", "#/more"], settings: ["More", "#/more"] };
 const wide = matchMedia("(min-width: 900px)");
 let lastRoute = "", titleObs = null;
 // How deep each page sits, so moving deeper slides in from the right and Back slides the other way.
-const DEPTH = { home: 0, events: 0, teams: 0, autos: 0, more: 0, event: 1, checklist: 1, scorer: 1, predict: 1, settings: 1, match: 2, team: 2 };
+const DEPTH = { home: 0, events: 0, teams: 0, autos: 0, more: 0, event: 1, checklist: 1, scorer: 1, predict: 1, settings: 1, board: 1, pit: 1, match: 2, team: 2 };
 const calm = matchMedia("(prefers-reduced-motion: reduce)");
 let lastName = "", lastDepth = 0, drawn = false, moving = null;
 /** Runs `change` as an animated transition (View Transitions where the browser has them). */
@@ -959,6 +1096,15 @@ function render() {
 function draw(parts, name, fresh) {
   stopAnim();
   const y = fresh ? 0 : scrollY;
+  pitMode(name === "pit");
+  if (IMMERSIVE.has(name)) {
+    // Whiteboard and pit display fill the screen: no top bar or tab bar.
+    document.body.classList.remove("has-nav");
+    root.replaceChildren(h("main", { class: `immersive page-${name}` }, views[name](...parts.slice(1))));
+    fitBadges(root);
+    if (fresh) scrollTo(0, 0);
+    return;
+  }
   document.body.classList.add("has-nav");
   const isWide = wide.matches;
   const tab = TAB_OF[name] || name;
@@ -991,6 +1137,7 @@ let pending = false;
 function refresh() {
   // Data that lands mid-transition waits for it (a third of a second); redrawing now would cut it short.
   if (moving) { moving.finished.finally(refresh); return; }
+  if (board?.busy()) { redrawAfterStroke = true; return; } // mid-stroke: redraw when the pen lifts
   if (pending) return;
   pending = true;
   requestAnimationFrame(() => {

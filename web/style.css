@@ -412,6 +412,117 @@ pre { margin: 0; padding: 12px; background: var(--surface-2); border: 1px solid 
 .autodetail { display: grid; gap: 16px; align-items: start; }
 @media (min-width: 900px) { .autodetail { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); } .autodetail .sticky { position: sticky; top: 64px; } }
 
+/* ---------- full-screen pages (whiteboard, pit display): no top bar or tab bar */
+main.immersive { max-width: none; min-height: 100dvh; padding: max(10px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left)); gap: 10px; }
+.wb-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--fg); font-size: 0.875rem; font-weight: 600; cursor: pointer; }
+.wb-btn svg { width: 19px; height: 19px; }
+.wb-btn:disabled { opacity: 0.35; cursor: default; }
+.wb-btn[aria-pressed="true"] { background: var(--fg); border-color: var(--fg); color: var(--bg); }
+
+/* ---------- whiteboard */
+main.page-board { height: 100dvh; overflow: hidden; }
+.wb-head { display: flex; align-items: center; gap: 12px; flex: none; }
+.wb-head .back { margin-left: 0; }
+.wb-title { flex: 1; display: flex; flex-direction: column; align-items: center; line-height: 1.2; min-width: 0; }
+.wb-title b { font-size: 1rem; }
+.wb-title span { font-size: 0.8125rem; color: var(--muted); }
+.wb { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
+.wb-stage { flex: 1; min-height: 0; display: grid; place-items: center; container-type: size; }
+.wb-field { position: relative; width: min(100cqw, 100cqh); aspect-ratio: 1; border-radius: 10px; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; box-shadow: 0 0 0 1px var(--line); background: #2b2e34; }
+.wb-field img, .wb-field canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; -webkit-user-drag: none; }
+.wb-field[data-tool="eraser"] { cursor: cell; } .wb-field:not([data-tool="eraser"]) { cursor: crosshair; }
+.tokens { position: absolute; inset: 0; pointer-events: none; }
+.token { position: absolute; width: 12.5%; aspect-ratio: 1; transform: translate(-50%, -50%); border-radius: 10%; display: grid; place-items: center; pointer-events: auto; cursor: grab; touch-action: none;
+  border: 2px solid rgba(255, 255, 255, 0.9); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35); transition: transform 0.12s var(--ease-out, ease), box-shadow 0.12s; container-type: inline-size; }
+.token.red { background: rgba(229, 72, 77, 0.82); } .token.blue { background: rgba(62, 123, 255, 0.82); }
+.token span { color: #fff; font: 700 22cqw/1 var(--font-num); letter-spacing: 0.01em; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4); white-space: nowrap; }
+.token.lifted { cursor: grabbing; transform: translate(-50%, -50%) scale(1.12); box-shadow: 0 10px 22px rgba(0, 0, 0, 0.4); z-index: 1; }
+.wb-bar { flex: none; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px 14px; padding: 8px 12px; margin: 0 auto; max-width: 100%;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12); }
+.wb-group { display: flex; align-items: center; gap: 6px; }
+.wb-group + .wb-group { padding-left: 14px; border-left: 1px solid var(--sep); }
+/* tools stand up like pens in a tray; the chosen one rises */
+.wb-tool { --tool: var(--surface-3); width: 34px; height: 46px; padding: 0; border: 0; background: none; cursor: pointer; display: grid; align-items: end; overflow: hidden; color: var(--fg); }
+.wb-tool svg { width: 34px; height: 46px; transform: translateY(12px); transition: transform 0.2s var(--ease-out, ease); }
+.wb-tool[aria-pressed="true"] svg { transform: translateY(0); }
+.wb-tool[data-tool="pencil"] { --tool: #f0c75e; } .wb-tool[data-tool="eraser"] { --tool: #f4f4f4; }
+.wb-swatch { width: 28px; height: 28px; border-radius: 50%; border: 0; padding: 0; cursor: pointer; background: var(--c); box-shadow: inset 0 0 0 1.5px rgba(128, 128, 128, 0.55); transition: transform 0.12s var(--ease-out, ease); }
+.wb-swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--fg); }
+.wb-swatch:active { transform: scale(0.88); }
+.wb-size { width: 34px; height: 34px; border: 0; border-radius: 8px; background: none; cursor: pointer; display: grid; place-items: center; }
+.wb-size i { width: var(--d); height: var(--d); border-radius: 50%; background: var(--fg); opacity: 0.45; }
+.wb-size[aria-pressed="true"] { background: var(--surface-2); } .wb-size[aria-pressed="true"] i { opacity: 1; }
+.wb-group.acts .wb-btn { min-height: 36px; padding: 0 10px; }
+@media (max-width: 700px) { .wb-group.acts .wb-btn span { display: none; } .wb-group + .wb-group { padding-left: 8px; } .wb-bar { gap: 8px; } .wb-swatch { width: 24px; height: 24px; } }
+
+/* ---------- pit display: big type for reading across a pit */
+main.page-pit { min-height: 100dvh; padding: clamp(14px, 2.5vw, 32px); gap: clamp(12px, 1.6vw, 22px); font-size: clamp(16px, 1.15vw, 22px); }
+.pit-head { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 24px; }
+.pit-team b { display: block; font: 700 clamp(2.5rem, 5vw, 5.5rem)/0.9 var(--font-num); }
+.pit-team span { color: var(--muted); font-weight: 500; font-size: 1.1em; }
+.pit-status { justify-self: center; text-align: center; display: flex; flex-direction: column; gap: 4px; padding: 10px 22px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); max-width: 100%; }
+.pit-status span { font-size: 0.8em; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.pit-status b { font: 700 1.7em/1.1 var(--font-num); }
+.pit-status.live span { color: var(--accent-text); }
+.pit-status.live span::before { content: ""; width: 9px; height: 9px; border-radius: 5px; background: var(--accent); animation: pulse 1.6s ease-in-out infinite; }
+.pit-status.urgent { background: var(--accent); border-color: var(--accent); color: #fff; animation: urge 1.4s ease-in-out infinite; }
+.pit-status.urgent span { color: rgba(255, 255, 255, 0.85); } .pit-status.urgent span::before { background: #fff; }
+@keyframes urge { 50% { box-shadow: 0 0 0 10px var(--accent-soft); } }
+.pit-clock { text-align: right; display: flex; flex-direction: column; }
+.pit-clock b { font: 700 clamp(2rem, 3.6vw, 4rem)/1 var(--font-num); font-variant-numeric: tabular-nums; }
+.pit-clock span { color: var(--muted); font-size: 0.85em; max-width: 26ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pit-grid { flex: 1; display: grid; gap: inherit; grid-template-columns: 1.25fr 1fr 0.85fr; grid-template-areas: "next rank matches" "stats stats insta"; align-items: stretch; }
+.pit-card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: clamp(14px, 1.4vw, 24px); display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.pit-card .eyebrow { font-size: 0.75em; }
+.pit-next { grid-area: next; position: relative; overflow: hidden; }
+.pit-next::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 6px; background: var(--g, var(--faint)); }
+.pit-next.red { --g: var(--red); } .pit-next.blue { --g: var(--blue); }
+.pit-next-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.pit-big { font: 700 clamp(4rem, 9vw, 9rem)/0.9 var(--font-num); margin-top: 4px; }
+.pit-big.small { font-size: clamp(2rem, 3.2vw, 3.4rem); line-height: 1.05; }
+.pit-when { color: var(--muted); font-size: 1.1em; font-variant-numeric: tabular-nums; }
+.pit-next .chance.lg b { font-size: clamp(3rem, 6vw, 6rem); }
+.pit-vs { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: auto; padding-top: 14px; border-top: 1px solid var(--sep); }
+.pit-vs > div { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.pit-who b { display: block; font: 700 2em/1 var(--font-num); }
+.pit-who span { color: var(--muted); font-size: 0.85em; }
+.pit-rank { grid-area: rank; }
+.pit-rank table { font-size: 1em; }
+.pit-rank td { padding: 7px 6px; }
+.pit-rank td:first-child { padding-left: 4px; width: 2.5em; color: var(--muted); } .pit-rank td:last-child { padding-right: 4px; color: var(--muted); }
+.pit-rank .tn { font-size: 1.25em; margin-right: 8px; }
+.pit-rank small { color: var(--muted); }
+.pit-rank tr.us td { background: var(--accent-soft); } .pit-rank tr.us .tn { color: var(--accent-text); }
+.pit-stats { grid-area: stats; display: grid; grid-template-columns: repeat(5, 1fr); background: var(--surface); border: 1px solid var(--line); border-radius: 16px; }
+.pit-stats > div { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 14px 6px; }
+.pit-stats > div + div { border-left: 1px solid var(--sep); }
+.pit-stats b { font: 700 clamp(2rem, 3.4vw, 3.6rem)/1 var(--font-num); font-variant-numeric: tabular-nums; }
+.pit-stats > div:first-child b { color: var(--accent-text); }
+.pit-stats span { color: var(--muted); font-size: 0.8em; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+.pit-matches { grid-area: matches; }
+.pit-m { display: grid; grid-template-columns: 3.2em 1fr auto; align-items: center; gap: 10px; padding: 6px 0 6px 10px; border-left: 4px solid var(--c); }
+.pit-m.red { --c: var(--red); } .pit-m.blue { --c: var(--blue); }
+.pit-m b { font: 700 1.35em/1 var(--font-num); }
+.pit-m-teams { color: var(--muted); font-size: 0.85em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pit-m-res { font: 600 1.05em/1 var(--font-num); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pit-m-res.won { color: var(--good); } .pit-m-res.lost { color: var(--bad); }
+.pit-insta { grid-area: insta; flex-direction: row; align-items: center; gap: 18px; }
+.pit-qr { width: clamp(84px, 8vw, 140px); aspect-ratio: 1; flex: none; padding: 8px; background: #fff; border-radius: 10px; }
+.pit-qr svg { width: 100%; height: 100%; display: block; }
+.pit-insta > div:last-child { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pit-ig { display: inline-flex; align-items: center; gap: 6px; font-size: 0.8em; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.pit-ig svg { width: 1.2em; height: 1.2em; }
+.pit-insta b { font: 700 clamp(1.4rem, 2.2vw, 2.4rem)/1.1 var(--font-num); overflow-wrap: anywhere; }
+.pit-foot { color: var(--muted); font-size: 0.8em; text-align: center; }
+.pit-controls { position: fixed; right: 14px; bottom: 14px; display: flex; gap: 8px; opacity: 0.25; transition: opacity 0.2s; }
+.pit-controls:hover, .pit-controls:focus-within { opacity: 1; }
+@media (max-width: 1000px) {
+  .pit-head { grid-template-columns: 1fr auto; } .pit-status { grid-column: 1 / -1; grid-row: 2; justify-self: stretch; }
+  .pit-grid { grid-template-columns: 1fr; grid-template-areas: "next" "stats" "matches" "rank" "insta"; }
+  .pit-stats { grid-template-columns: repeat(3, 1fr); } .pit-stats > div:nth-child(4) { border-left: 0; }
+  .pit-controls { opacity: 1; }
+}
+
 /* ---------- motion. Only real changes move: navigating, a new score, a tick, a theme switch.
    Live data redraws every few seconds at events, so nothing animates just because it was drawn. */
 :root { --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1); --ease-in: cubic-bezier(0.4, 0, 1, 1); }

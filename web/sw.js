@@ -5,7 +5,7 @@ const VERSION = "__VERSION__";
 const CACHE = `scout-${VERSION}`;
 const SDK = "https://www.gstatic.com/firebasejs/12.19.0/";
 const FILES = [
-  "./", "app.js", "fb.js", "firebase-config.js", "style.css", "field.webp",
+  "./", "app.js", "fb.js", "board.js", "vendor/qrcode.js", "firebase-config.js", "style.css", "field.webp",
   "icon.svg", "icon-180.png", "icon-512.png", "manifest.webmanifest",
   "fonts/barlow-400.woff2", "fonts/barlow-500.woff2", "fonts/barlow-600.woff2", "fonts/barlow-sc-600.woff2", "fonts/barlow-sc-700.woff2",
   `${SDK}firebase-app.js`, `${SDK}firebase-auth.js`, `${SDK}firebase-firestore.js`,
