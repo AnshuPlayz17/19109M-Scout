@@ -314,8 +314,12 @@ async function handleRequests(ctx) {
     seen.add(`${kind}:${key}`);
     try {
       if (kind === "team") {
+        // Not limited to registered teams, so teams missing from the season list can be found too.
         const [t] = (await get("teams", { number: [String(key)], program: [config.programId] })).data;
-        if (t) await syncTeamStats(t.id, t.number, ctx.season.id);
+        if (t) {
+          await syncTeamStats(t.id, t.number, ctx.season.id);
+          await db.doc(`teamstats/${t.number}`).set({ info: compactTeam(t) }, { merge: true }); // name, school, city for the app
+        }
         console.log(`  request: team ${key}${t ? "" : " (not found)"}`);
       } else if (kind === "event") {
         const { event, season } = await syncEvent({ id: Number(key) }, { ours: ctx.events.some(e => e.id === Number(key)), ourNumber: ctx.team.number });
@@ -341,6 +345,13 @@ async function writeStatus(ctx, extra) {
 
 async function quick() {
   const ctx = await context();
+  // GitHub sometimes skips scheduled runs, nightly full refresh included. If the last full
+  // refresh is over a day old and none of our events is live, do one now instead.
+  const lastFull = (await db.doc("meta/status").get()).get("lastFull")?.toMillis?.() || 0;
+  if (Date.now() - lastFull > config.fullEveryHours * 3600e3 && !ctx.events.some(e => liveNow(e, Date.now()))) {
+    console.log(`Last full refresh ${lastFull ? `${Math.round((Date.now() - lastFull) / 3600e3)} h ago` : "never"}; doing one now`);
+    return full();
+  }
   const active = ctx.events.filter(e => ms(e.start) - now < config.quickDaysAhead * DAY && now - ms(e.end) < config.quickDaysAfterEnd * DAY);
   for (const e of active) await syncEvent(e, { ours: true, ourNumber: ctx.team.number });
   // Other events someone opened in the app, while they're running.

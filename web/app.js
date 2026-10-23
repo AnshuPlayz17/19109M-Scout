@@ -155,8 +155,8 @@ const pct = p => `${Math.round(p * 100)}%`;
 const signed = x => (x > 0 ? "+" : "") + x;
 const where_ = e => [e.city, e.region].filter(Boolean).join(", ");
 const isLive = e => ms(e.start) <= Date.now() + DAY / 2 && Date.now() <= ms(e.end) + DAY;
-const reEvent = sku => `https://www.robotevents.com/robot-competitions/vex-robotics-competition/${sku}.html`;
-const reTeam = n => `https://www.robotevents.com/teams/V5RC/${encodeURIComponent(n)}`;
+const reEvent = sku => `https://events.vex.com/robot-competitions/vex-robotics-competition/${sku}.html`;
+const reTeam = n => `https://events.vex.com/teams/V5RC/${encodeURIComponent(n)}`;
 const teamHref = n => `#/team/${encodeURIComponent(n)}`;
 const tn = n => h("span", { class: `tn${n === us() ? " us" : ""}` }, n);
 // Team number in a fixed-size tile. The size here is a first guess; fitBadges() then
@@ -221,7 +221,7 @@ function focusEvent() {
 }
 function teamInfo(n) {
   for (const e of Object.values(S.events)) { const t = e?.teams?.find(x => x.number === n); if (t) return t; }
-  return S.index.teams?.find(t => t.number === n) || null;
+  return S.index.teams?.find(t => t.number === n) || S.stats[n]?.info || null; // info: teams looked up on request
 }
 
 // Scores seen so far, so a score that just came in (or changed) can light up for a moment.
@@ -386,7 +386,7 @@ views.event = (id, tab) => {
       h("div", { class: "notice" }, icon("download"), h("b", {}, "Not loaded yet"),
         h("span", {}, "It shows up after the next refresh, within the hour (within a minute while one of our events is live). It stays up to date while the event runs."),
         h("button", { class: "btn primary", disabled: asked, onclick: () => request("event", id) }, asked ? "Requested" : "Load this event")),
-      e ? group(lrow({ href: reEvent(e.sku), title: "Open on RobotEvents", external: true })) : null];
+      e ? group(lrow({ href: reEvent(e.sku), title: "Open on VEX Events", external: true })) : null];
   }
   const hasUs = ev.teams.some(t => t.number === us());
   tab ||= hasUs ? "ours" : "matches";
@@ -457,7 +457,7 @@ views.event = (id, tab) => {
   out.push(section("More"), group(
     lrow({ href: `#/predict/${id}`, ic: "predict", title: "Win predictor", sub: "Pick any four teams here" }),
     !ev.ours ? lrow({ ic: "refresh", title: S.requested.has(`event:${id}`) ? "Refresh requested" : "Refresh this event", sub: `Updated ${ago(ev.updatedAt)}`, onclick: () => request("event", id) }) : null,
-    lrow({ href: reEvent(ev.sku), ic: "ext", title: "Open on RobotEvents", external: true })));
+    lrow({ href: reEvent(ev.sku), ic: "ext", title: "Open on VEX Events", external: true })));
   return out;
 };
 
@@ -497,22 +497,43 @@ views.teams = () => {
   if (teamScope !== "event" || !ev) loadIndex("teams");
   const scope = teamScope === "event" && !ev ? "region" : teamScope;
   const region = S.status?.team?.region || "Ontario";
-  const list = group();
+  if (teamQuery.trim()) loadIndex("teams"); // a search also looks beyond the chosen scope
+  const list = group(), extra = h("div", { class: "col" });
   const count = h("p", { class: "footnote", style: "margin-top:0" });
   const drawList = () => {
     const q = teamQuery.trim().toLowerCase();
+    const hit = t => `${t.number} ${t.name} ${t.org} ${t.city} ${t.robot}`.toLowerCase().includes(q);
     let items = scope === "event" ? ev.teams : S.index.teams || [];
     if (scope === "region") items = items.filter(t => t.region === region);
-    if (q) items = items.filter(t => `${t.number} ${t.name} ${t.org} ${t.city} ${t.robot}`.toLowerCase().includes(q));
+    if (q) items = items.filter(hit);
     if (scope === "event") items = items.slice().sort((a, b) => (ev.ratings?.[b.number]?.rating ?? 0) - (ev.ratings?.[a.number]?.rating ?? 0));
     list.replaceChildren(...items.slice(0, 80).map(t => teamRow(t, scope === "event" ? ev : null)));
-    if (list.isConnected) fitBadges(list);
+    list.hidden = !items.length && !!q;
     count.textContent = items.length > 80 ? `Showing 80 of ${items.length}. Search to narrow it down.` : "";
-    if (!items.length) list.append(h("p", { class: "empty" }, S.index.teams?.length || scope === "event" ? "No teams match." : "Loading teams…"));
+    if (!items.length && !q) list.append(h("p", { class: "empty" }, S.index.teams?.length || scope === "event" ? "No teams yet." : "Loading teams…"));
+    // Searching: also show matches outside the chosen scope, and offer a VEX Events lookup
+    // for a team number nobody has (it registered recently, or hasn't registered this season).
+    extra.replaceChildren();
+    if (q) {
+      const shown = new Set(items.map(t => t.number));
+      const others = scope === "all" ? [] : (S.index.teams || []).filter(t => !shown.has(t.number) && hit(t)).slice(0, 30);
+      if (others.length) extra.append(section(items.length ? "More teams" : scope === "event" ? "Not at this event" : `Outside ${region}`), group(...others.map(t => teamRow(t, null))));
+      const num = teamQuery.trim().toUpperCase();
+      const known = items.concat(others).some(t => t.number === num);
+      if (!known && /^\d{1,6}[A-Z]?$/.test(num)) {
+        const asked = S.requested.has(`team:${num}`);
+        extra.append(h("div", { class: "notice" }, h("b", {}, items.length || others.length ? `Looking for ${num}?` : `${num} isn't in the team list`),
+          h("span", {}, "The list has the teams registered for this season, refreshed nightly. Look it up and it shows up within a minute while we're live, or within the hour."),
+          h("div", { class: "row" },
+            h("button", { class: "btn primary", disabled: asked, onclick: () => { request("team", num); location.hash = teamHref(num); } }, asked ? "Requested" : `Look up ${num}`),
+            h("a", { class: "btn", href: reTeam(num), target: "_blank", rel: "noopener" }, "VEX Events", icon("ext")))));
+      } else if (!items.length && !others.length) extra.append(h("p", { class: "empty" }, S.index.teams?.length ? "No teams match." : "Loading teams…"));
+    }
+    if (list.isConnected) { fitBadges(list); fitBadges(extra); }
   };
   drawList();
   return [pagehead("Teams"), searchBox("Number, name, school or city", teamQuery, e => { teamQuery = e.target.value; drawList(); }),
-    seg([ev && ["event", "This event"], ["region", region], ["all", "Everyone"]].filter(Boolean), scope, v => { teamScope = v; render(); }), list, count];
+    seg([ev && ["event", "This event"], ["region", region], ["all", "Everyone"]].filter(Boolean), scope, v => { teamScope = v; render(); }), list, count, extra];
 };
 
 const AUTO_OPTIONS = ["No auto", "Toggle only", "Toggle + preload", "Midfield rush", "Several pins", "Interfered / broke"];
@@ -591,7 +612,7 @@ views.team = n => {
     x.auto || x.autoPins ? h("span", { class: "small muted" }, [x.auto, x.autoPins ? `${x.autoPins} auto pins` : ""].filter(Boolean).join(" · ")) : null,
     x.notes ? h("p", {}, x.notes) : null,
     x.by === user.uid ? h("button", { class: "btn small danger", style: "align-self:flex-start", onclick: () => { if (confirm("Delete this note?")) deleteDoc(doc(db, "scouting", x.id)); } }, "Delete") : null))));
-  right.push(group(lrow({ href: reTeam(n), title: "Open on RobotEvents", external: true })));
+  right.push(group(lrow({ href: reTeam(n), title: "Open on VEX Events", external: true })));
 
   return [h("header", { class: "profile" }, h("div", { class: "t" }, h("h1", {}, n), h("p", {}, [t?.name, t?.org, [t?.city, t?.region].filter(Boolean).join(", ")].filter(Boolean).join(" · ")))),
     h("div", { class: "cols" }, h("div", { class: "col" }, ...left), h("div", { class: "col" }, ...right))];
@@ -1042,7 +1063,7 @@ views.more = () => [pagehead("More"),
     lrow({ href: "#/pit", ic: "pit", title: "Pit display", sub: "Full-screen dashboard to leave at the pit" })),
   group(
     lrow({ href: "#/settings", ic: "settings", title: "Settings", sub: `Signed in as ${S.nickname}` }),
-    lrow({ href: reTeam(us()), ic: "ext", title: `${us()} on RobotEvents`, external: true }))];
+    lrow({ href: reTeam(us()), ic: "ext", title: `${us()} on VEX Events`, external: true }))];
 
 views.settings = () => {
   const nick = h("input", { value: S.nickname, maxlength: 24, "aria-label": "Nickname" });
@@ -1062,7 +1083,7 @@ views.settings = () => {
       lrow({ info: true, title: "Last refresh", trail: ago(S.status?.lastQuick) }),
       lrow({ info: true, title: "Last full refresh", trail: ago(S.status?.lastFull) }),
       lrow({ info: true, title: "Season", trail: S.status?.season?.name || "—" })),
-    h("p", { class: "footnote" }, "Results come from RobotEvents: every 5 seconds while one of our events is live, hourly otherwise, and in full each night. New scores show up here the moment they're saved."),
+    h("p", { class: "footnote" }, "Results come from VEX Events: every 5 seconds while one of our events is live, hourly otherwise, and in full each night. New scores show up here the moment they're saved."),
     section("Account"),
     group(lrow({ info: true, title: user.email }),
       h("button", { type: "button", class: "lrow noicon", onclick: () => signOut(auth) }, h("span", { class: "tx" }, h("b", { style: "color:var(--bad)" }, "Sign out")), h("span"), h("span")))];

@@ -32,7 +32,7 @@ self.addEventListener("fetch", e => {
   if (req.method !== "GET") return;
   const url = new URL(req.url);
   const ours = url.origin === location.origin;
-  if (!ours && !req.url.startsWith(SDK)) return; // Firestore, auth and RobotEvents go straight to the network
+  if (!ours && !req.url.startsWith(SDK)) return; // Firestore, auth and VEX Events go straight to the network
   if (ours && (url.pathname.startsWith("/__/") || url.pathname.endsWith("/sw.js"))) return;
   e.respondWith((async () => {
     const cache = await caches.open(CACHE);

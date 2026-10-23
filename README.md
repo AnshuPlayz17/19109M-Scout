@@ -3,12 +3,12 @@
 The team's scouting app. It runs entirely in the cloud for free. Nobody's laptop has to be on.
 
 - **Website + database:** Firebase (free Spark plan): hosting, email/password accounts and the Firestore database.
-- **Data refresh:** a GitHub Actions job (`.github/workflows/sync.yml`) pulls results from RobotEvents:
-  - every 5 seconds while one of our events is running (8am–6pm on event days, in the event's own time zone, so Worlds in Dallas works too). Each check reads only our division's matches and rankings (2 RobotEvents requests); teams, skills and other divisions are re-read once a minute. That's about 30 requests a minute, well under RobotEvents' limit, and the database is only written when a score actually changes, so the free Firebase quota isn't touched. Phones update the moment a write lands.
+- **Data refresh:** a GitHub Actions job (`.github/workflows/sync.yml`) pulls results from VEX Events (events.vex.com, formerly RobotEvents):
+  - every 5 seconds while one of our events is running (8am–6pm on event days, in the event's own time zone, so Worlds in Dallas works too). Each check reads only our division's matches and rankings (2 VEX Events requests); teams, skills and other divisions are re-read once a minute. That's about 30 requests a minute, well under VEX Events' limit, and the database is only written when a score actually changes, so the free Firebase quota isn't touched. Phones update the moment a write lands.
   - hourly the rest of the time
   - a full refresh every night
 - **Privacy:** every page needs an account, and an account needs the team code. Our autos and scouting notes are only readable by members.
-- **Why this repo is public:** public repos get unlimited free GitHub Actions minutes, so live mode can run at every event. Nothing private is in here: the join code, RobotEvents token and Firebase key are repository secrets, the Firebase web settings are meant to be public, and all data sits in Firestore behind the members-only rules. Our autos and robot code stay in the private robot repo.
+- **Why this repo is public:** public repos get unlimited free GitHub Actions minutes, so live mode can run at every event. Nothing private is in here: the join code, VEX Events token and Firebase key are repository secrets, the Firebase web settings are meant to be public, and all data sits in Firestore behind the members-only rules. Our autos and robot code stay in the private robot repo.
 
 ## What's in the app
 
@@ -45,7 +45,7 @@ config.json         team number, region, refresh windows
 firestore.rules     who can read and write what
 firebase.json
 web/                the website (plain HTML/JS, no build step)
-sync/               the RobotEvents → Firestore job, plus tests (npm test)
+sync/               the VEX Events → Firestore job, plus tests (npm test)
 ```
 
 Our autos (`scout/autos.json`) live in the private robot repo. A small workflow there checks out this repo and runs `sync.mjs` with `SYNC_MODE=autos` and `AUTOS_FILE` pointing at them.
@@ -68,7 +68,7 @@ In this repo (and the robot repo, for `FIREBASE_SERVICE_ACCOUNT` only) go to **S
 
 | Name | Value |
 |---|---|
-| `ROBOTEVENTS_TOKEN` | Your RobotEvents API token (the long `eyJ…` one) |
+| `ROBOTEVENTS_TOKEN` | Your VEX Events API token (the long `eyJ…` one; the name is from when it was RobotEvents) |
 | `FIREBASE_SERVICE_ACCOUNT` | The entire contents of the `.json` file from step 1.6 |
 | `TEAM_JOIN_CODE` | A code teammates type to join. Pick something not guessable |
 | `ANTHROPIC_API_KEY` | *Optional.* An API key from <https://console.anthropic.com>, for AI notes. Set a monthly spend limit there |
