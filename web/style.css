@@ -524,6 +524,10 @@ main.page-pit { min-height: 100dvh; padding: clamp(14px, min(2.5vw, 3.5vh), 32px
 @media (min-width: 700px) { .sheet.unlock { top: 22vh; } }
 .sheet.unlock .head { margin-bottom: 0; }
 .shake { animation: shake 0.35s; }
+.card.gate { max-width: 440px; width: 100%; align-self: center; margin-top: 4vh; padding: 24px; gap: 12px; }
+.gate-icon { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent-text); }
+.gate-icon svg { width: 22px; height: 22px; }
+.gate-wrap { flex: 1; display: grid; place-items: start center; }
 @keyframes shake { 20%, 60% { transform: translateX(-8px); } 40%, 80% { transform: translateX(8px); } }
 /* On a laptop or TV the display is exactly one screen: cards share the height, and the
    rankings show as many rows as fit (app.js drops the rest, never our row). */

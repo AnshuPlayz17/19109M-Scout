@@ -671,6 +671,7 @@ function fieldSvg(auto, thumb) {
   return svg;
 }
 views.autos = (id) => {
+  if (!areasOpen()) return [pagehead("Autos"), areaGate("Autos", "Our autonomous routes are for the team only.")];
   if (G.key !== "override") return [pagehead("Autos"), notice(`Our autos are written for Override, this season's game. Switch the game back to Override in Settings to see them.`, `No ${G.name} autos`, "autos"),
     group(lrow({ href: "#/settings", title: "Change game", sub: `Showing ${G.name} ${G.years}` }))];
   watchAutos();
@@ -966,6 +967,8 @@ const fullscreenBtn = () => document.fullscreenEnabled
   ? h("button", { type: "button", class: "wb-btn", "aria-label": "Full screen", title: "Full screen", onclick: () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {})) }, icon("expand"), h("span", {}, "Full screen"))
   : null;
 views.board = () => {
+  if (!areasOpen()) return [h("div", { class: "wb-head" }, h("button", { type: "button", class: "back", onclick: exitTo }, icon("back"), h("span", {}, "Done")), h("div", { class: "wb-title" }, h("b", {}, "Whiteboard")), h("span", {})),
+    h("div", { class: "gate-wrap" }, areaGate("The whiteboard", "Our plays are for the team only."))];
   board ||= createBoard({ h, icon, field: G.field, key: G.key === "override" ? "19109m.board" : `19109m.board.${G.key}`, starts: G.key === "pushback" ? [0.3, 0.7] : undefined,
     onIdle: () => { if (redrawAfterStroke) { redrawAfterStroke = false; refresh(); } } });
   // Robots are named after our next match: us and our partner, then the opponents.
@@ -1011,29 +1014,41 @@ function lockPit() {
   render();
 }
 const sha256 = async text => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)))].map(b => b.toString(16).padStart(2, "0")).join("");
+/**
+ * Checks the team code for the pit display and the locked areas. The app only has the code's
+ * hash (meta/lock). Before the sync has stored it, this account's own password is asked instead.
+ * Five wrong tries in a row pause checking for 30 seconds.
+ */
+let lockDoc;
+async function codeCheck() {
+  lockDoc ??= await getDoc(doc(db, "meta", "lock")).then(d => (d.exists() ? d.data() : null)).catch(() => null);
+  const lock = lockDoc;
+  return {
+    what: lock ? "team code" : "account password",
+    placeholder: lock ? "Team code" : "Password",
+    async check(v) {
+      if (Date.now() < unlockWait) return `Too many tries. Wait ${Math.ceil((unlockWait - Date.now()) / 1000)} s.`;
+      const ok = lock ? (await sha256(`19109m-pit:${v}`)) === lock.hash
+        : await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, v)).then(() => true, () => false);
+      if (ok) { unlockTries = 0; return true; }
+      if (++unlockTries >= 5) { unlockTries = 0; unlockWait = Date.now() + 30e3; return "Wrong 5 times. Try again in 30 seconds."; }
+      return `That's not the ${lock ? "team code" : "account password"}.`;
+    },
+  };
+}
 async function openUnlock() {
   if (document.querySelector(".unlock")) return;
-  const lock = await getDoc(doc(db, "meta", "lock")).then(d => (d.exists() ? d.data() : null)).catch(() => null);
-  // Before the sync has stored the code's hash, fall back to this account's own password.
-  const what = lock ? "team code" : "account password";
-  const input = h("input", { type: "password", autocomplete: "off", placeholder: lock ? "Team code" : "Password", "aria-label": what });
+  const { what, placeholder, check } = await codeCheck();
+  const input = h("input", { type: "password", autocomplete: "off", placeholder, "aria-label": what });
   const msg = h("p", { class: "error", role: "alert" });
   const close = () => { bg.remove(); box.remove(); };
   const bg = h("div", { class: "sheet-bg unlock-bg", onclick: close });
   const box = h("form", { class: "sheet unlock", role: "dialog", "aria-modal": "true", "aria-label": "Unlock pit display", onsubmit: async e => {
       e.preventDefault();
-      if (Date.now() < unlockWait) { msg.textContent = `Too many tries. Wait ${Math.ceil((unlockWait - Date.now()) / 1000)} s.`; return; }
       const v = input.value.trim(); if (!v) return;
-      let ok = false;
-      if (lock) ok = (await sha256(`19109m-pit:${v}`)) === lock.hash;
-      else ok = await reauthenticateWithCredential(user, EmailAuthProvider.credential(user.email, v)).then(() => true, () => false);
-      if (!ok) {
-        input.value = ""; box.classList.remove("shake"); void box.offsetWidth; box.classList.add("shake");
-        if (++unlockTries >= 5) { unlockTries = 0; unlockWait = Date.now() + 30e3; msg.textContent = "Wrong 5 times. Try again in 30 seconds."; }
-        else msg.textContent = `That's not the ${what}.`;
-        return;
-      }
-      unlockTries = 0; pitLocked = false; store.set("pitLock", false); close();
+      const ok = await check(v);
+      if (ok !== true) { input.value = ""; box.classList.remove("shake"); void box.offsetWidth; box.classList.add("shake"); msg.textContent = ok; return; }
+      pitLocked = false; store.set("pitLock", false); close();
       if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
       location.hash = "#/";
     } },
@@ -1045,6 +1060,36 @@ async function openUnlock() {
   input.focus();
 }
 document.addEventListener("fullscreenchange", () => { if (lastName === "pit") refresh(); });
+
+// ---- locked areas: Autos and the Whiteboard (our routes and plays) need the team code too.
+// Once it's entered they stay open on this device for 12 hours, or until Lock now in Settings.
+// This locks the screens, not the data: everyone who can sign in is already a team member.
+const AREA_HOURS = 12;
+const areasOpen = () => store.get("areasOpenUntil", 0) > Date.now();
+const lockAreas = () => { store.set("areasOpenUntil", 0); render(); };
+let gateMsg = ""; // kept outside the form so a live-data redraw doesn't wipe "wrong code"
+function areaGate(title, why) {
+  const input = h("input", { type: "password", autocomplete: "off", "aria-label": "Team code" });
+  const msg = h("p", { class: "error", role: "alert" }, gateMsg);
+  const what = h("span", {}, "team code");
+  codeCheck().then(c => { what.textContent = c.what; input.placeholder = c.placeholder; input.setAttribute("aria-label", c.what); });
+  const form = h("form", { class: "card gate", onsubmit: async e => {
+    e.preventDefault();
+    const v = input.value.trim(); if (!v) return;
+    const ok = await (await codeCheck()).check(v);
+    if (ok !== true) { input.value = ""; gateMsg = ok; document.querySelectorAll(".gate .error").forEach(m => { m.textContent = ok; }); const f = document.querySelector(".gate") || form; f.classList.remove("shake"); void f.offsetWidth; f.classList.add("shake"); return; }
+    gateMsg = "";
+    store.set("areasOpenUntil", Date.now() + AREA_HOURS * 3600e3);
+    input.blur(); render();
+  } },
+    h("span", { class: "gate-icon", "aria-hidden": "true" }, icon("lock")),
+    h("h2", {}, `${title} is locked`),
+    h("p", { class: "muted" }, why, " Enter the ", what, ` to open it on this device for ${AREA_HOURS} hours.`),
+    secret(input, "team code"), msg,
+    h("button", { class: "btn primary wide", type: "submit" }, icon("lock"), "Unlock"));
+  setTimeout(() => { if (form.isConnected && matchMedia("(hover: hover)").matches) input.focus(); }, 50);
+  return form;
+}
 
 /** Fits the pit display to one screen: drop ranking rows (never ours) and older matches until nothing is cut off. */
 function fitPit() {
@@ -1175,6 +1220,9 @@ views.settings = () => {
       location.hash = "#/"; location.reload();
     }),
     h("p", { class: "footnote" }, "Events, teams, rankings, the scorer and the whiteboard all follow the game. Push Back is last season's, for looking back. Saved on this device."),
+    section("Locked areas"),
+    group(lrow({ info: true, ic: "lock", title: "Autos and Whiteboard", sub: areasOpen() ? `Open on this device until ${fmtTime(new Date(store.get("areasOpenUntil", 0)).toISOString())}` : "Locked: they ask for the team code",
+      trail: areasOpen() ? h("button", { type: "button", class: "btn small", onclick: lockAreas }, "Lock now") : "" })),
     section("Appearance"),
     seg([["system", "System"], ["light", "Light"], ["dark", "Dark"]], store.get("theme", "system"), v => { store.set("theme", v); transition("theme", () => { applyTheme(v); render(); }); }),
     h("p", { class: "footnote" }, "System follows your phone's light or dark mode. Saved on this device."),
@@ -1252,7 +1300,7 @@ function draw(parts, name, fresh) {
   const head = h("header", { class: "top" },
     h("div", { class: "left" }, sub ? h("button", { class: "back", onclick: () => { if (backHref) location.hash = backHref; else if (history.length > 1) history.back(); else location.hash = "#/"; } }, icon("back"), h("span", {}, backLabel)) : null),
     h("span", { class: "title" }, ""),
-    h("div", { class: "right" }, name === "autos" ? seg([["red", "Red"], ["blue", "Blue"]], side, v => { side = v; store.set("alliance", v); render(); }, "red-blue") : null));
+    h("div", { class: "right" }, name === "autos" && areasOpen() ? seg([["red", "Red"], ["blue", "Blue"]], side, v => { side = v; store.set("alliance", v); render(); }, "red-blue") : null));
   const current = k => isWide ? (k === name || (k === "events" && ["event", "match"].includes(name)) || (k === "teams" && name === "team")) : k === tab;
   root.replaceChildren(head, h("main", {}, content),
     h("nav", { class: "bottom", "aria-label": "Main" }, isWide ? h("div", { class: "navbrand" }, h("b", {}, us()), h("span", {}, "Scout")) : null, (isWide ? NAV_WIDE : NAV).map(([k, label, path]) => h("a", { href: `#/${path}`, "aria-current": current(k) ? "page" : null }, icon(k), label))));
