@@ -1,5 +1,5 @@
 // 19109M Scout: events, teams, match predictions, scouting notes, autos, checklists and a match scorer.
-import { db, h, requireMember, signOut, auth, splash, hideSplash, rememberMember, secret } from "./fb.js";
+import { db, h, requireMember, signOut, auth, splash, hideSplash, rememberMember, secret, askAdmin } from "./fb.js";
 import { createBoard } from "./board.js";
 import {
   doc, getDoc, onSnapshot, collection, query, where, addDoc, setDoc, updateDoc, deleteDoc, serverTimestamp,
@@ -49,6 +49,13 @@ const watchTeam = n => {
 watch("status", doc(db, "meta", G.status), s => {
   S.status = s.exists() ? s.data() : null;
   for (const e of S.status?.ourEvents || []) watchEvent(e.id);
+});
+// Admins (meta/admins, from the ADMIN_EMAILS secret) see team code requests and can see the code.
+watch("admins", doc(db, "meta", "admins"), s => {
+  S.admin = !!s.exists() && (s.data().uids || []).includes(user.uid);
+  if (S.admin) watch("codeRequests", collection(db, "codeRequests"), q => {
+    S.codeRequests = q.docs.map(d => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) })).sort((a, b) => (b.at?.toMillis?.() || 0) - (a.at?.toMillis?.() || 0));
+  });
 });
 const watchAutos = () => watch("autos", doc(db, "autos", "main"), s => { S.autos = s.exists() ? s.data() : { autos: [] }; });
 const watchLists = () => watch("lists", collection(db, "checklists"), s => {
@@ -307,6 +314,8 @@ views.home = () => {
   const left = [], right = [];
   const fe = focusEvent();
   const ev = fe && S.events[fe.id];
+  if (S.admin && S.codeRequests?.length) out.push(h("a", { class: "notice admin-ask", href: "#/settings" }, h("b", {},
+    `${S.codeRequests.length === 1 ? `${S.codeRequests[0].nickname} is` : `${S.codeRequests.length} people are`} asking for the team code`), h("span", {}, "Open Settings to see who, and to see the code.")));
 
   // The event that matters now, with where we stand at it.
   if (fe) {
@@ -490,9 +499,9 @@ views.match = (eid, mid) => {
         h("div", { class: "row between", style: "flex-wrap:nowrap" }, h("span", { class: "row", style: "flex-wrap:nowrap;min-width:0" }, badge(n), h("span", { style: "display:flex;flex-direction:column;min-width:0" },
           h("b", {}, n), h("span", { class: "muted small" }, teamName(n)))), icon("chev", "chev")),
         h("div", { class: "row" }, r ? h("span", { class: "pill" }, `#${r.rank} · ${r.wins}-${r.losses}-${r.ties}`) : null, o?.matches >= 3 ? h("span", { class: "pill" }, `OPR ${Math.round(o.opr)}`) : null,
-          sc.length ? h("span", { class: "pill" }, `★ ${avg.toFixed(1)} from ${sc.length}`) : null),
-        note?.ai?.summary ? h("p", { class: "small" }, note.ai.summary) : note?.stats ? h("p", { class: "small muted" }, note.stats) : null,
-        note?.ai?.watch?.length ? h("p", { class: "small", style: "color:var(--warn)" }, "Watch for: " + note.ai.watch.join(" · ")) : null);
+          sc.length && areasOpen() ? h("span", { class: "pill" }, `★ ${avg.toFixed(1)} from ${sc.length}`) : null),
+        note?.ai?.summary && areasOpen() ? h("p", { class: "small" }, note.ai.summary) : note?.stats ? h("p", { class: "small muted" }, note.stats) : null,
+        note?.ai?.watch?.length && areasOpen() ? h("p", { class: "small", style: "color:var(--warn)" }, "Watch for: " + note.ai.watch.join(" · ")) : null);
     });
     return h("div", { class: "col" }, section(`${color === "red" ? "Red" : "Blue"} alliance${m.scored ? ` · ${m[color].score}` : ""}`), h("div", { class: "group-list", style: `border-top:4px solid var(--${color})` }, ...rows));
   };
@@ -574,14 +583,16 @@ views.team = n => {
       sub: ev.name, trail: om.win !== null ? `${pct(om.win)} to win` : "" }))));
   }
   const notesCard = card(h("h3", {}, "Notes"));
-  if (note?.ai) {
+  const open = areasOpen(); // AI notes and our scouting are behind the team code
+  if (note?.ai && open) {
     notesCard.append(h("p", {}, note.ai.summary));
     if (note.ai.strengths?.length || note.ai.watch?.length) notesCard.append(h("div", { class: "bullets" },
       h("div", {}, h("span", { class: "eyebrow" }, "Strengths"), h("ul", {}, (note.ai.strengths || []).map(s => h("li", {}, s)))),
       h("div", {}, h("span", { class: "eyebrow" }, "Watch for"), h("ul", {}, (note.ai.watch || []).map(s => h("li", {}, s))))));
   }
-  if (note?.stats) notesCard.append(h("p", { class: note.ai ? "muted small" : "" }, note.stats));
+  if (note?.stats) notesCard.append(h("p", { class: note.ai && open ? "muted small" : "" }, note.stats));
   if (!note) notesCard.append(h("p", { class: "muted" }, note === undefined ? "Loading…" : "No notes yet. Notes are written for every team at our events."));
+  else if (note.ai && !open) notesCard.append(h("p", { class: "muted small" }, "AI notes from our scouting are locked. Unlock scouting notes to see them."));
   else notesCard.append(h("p", { class: "muted small" }, note.ai ? `AI notes from results and our scouting, ${ago(note.ai.at)}` : `From ${note.statsEvent || "results"}`));
   left.push(notesCard);
   left.push(section("Season", h("a", { href: "#", onclick: e => { e.preventDefault(); request("team", n); } }, S.requested.has(`team:${n}`) ? "Requested" : "Refresh")));
@@ -621,7 +632,8 @@ views.team = n => {
     h("label", { class: "field" }, "Notes", h("textarea", { maxlength: 1000, placeholder: "Driving, defense, what they score, anything breaking", oninput: e => { d.notes = e.target.value; } }, d.notes)),
     msg, h("button", { class: "btn primary wide", type: "submit" }, "Save note"));
   right.push(form);
-  if (sc.length) right.push(section(`Our scouting · ★ ${avg.toFixed(1)}`), group(...sc.map(x => h("div", { class: "note" },
+  if (!open && sc.length) right.push(areaGate("Our scouting", `${sc.length} note${sc.length === 1 ? "" : "s"} on ${n} from the team.`, { focus: false }));
+  else if (sc.length) right.push(section(`Our scouting · ★ ${avg.toFixed(1)}`), group(...sc.map(x => h("div", { class: "note" },
     h("div", { class: "meta" }, h("b", {}, x.nickname), h("span", { class: "muted small" }, [x.match, ago(x.at)].filter(Boolean).join(" · "))),
     h("span", { class: "starline", "aria-label": `${x.rating} of 5 stars` }, "★".repeat(x.rating) + "☆".repeat(5 - x.rating)),
     x.auto || x.autoPins ? h("span", { class: "small muted" }, [x.auto, x.autoPins ? `${x.autoPins} auto ${PIECE}s` : ""].filter(Boolean).join(" · ")) : null,
@@ -1054,21 +1066,22 @@ async function openUnlock() {
     } },
     h("div", { class: "head" }, h("h3", {}, "Unlock pit display"), h("button", { class: "btn small plain", type: "button", onclick: close }, "Cancel")),
     h("p", { class: "muted small" }, `Enter the ${what} to leave the pit display.`), secret(input, what), msg,
-    h("button", { class: "btn primary wide", type: "submit" }, icon("lock"), "Unlock"));
+    h("button", { class: "btn primary wide", type: "submit" }, icon("lock"), "Unlock"),
+    askAdmin("Pit display", S.nickname));
   box.addEventListener("keydown", e => { if (e.key === "Escape") close(); });
   document.body.append(bg, box);
   input.focus();
 }
 document.addEventListener("fullscreenchange", () => { if (lastName === "pit") refresh(); });
 
-// ---- locked areas: Autos and the Whiteboard (our routes and plays) need the team code too.
+// ---- locked areas: Autos, the Whiteboard and our scouting notes need the team code too.
 // Once it's entered they stay open on this device for 12 hours, or until Lock now in Settings.
 // This locks the screens, not the data: everyone who can sign in is already a team member.
 const AREA_HOURS = 12;
 const areasOpen = () => store.get("areasOpenUntil", 0) > Date.now();
 const lockAreas = () => { store.set("areasOpenUntil", 0); render(); };
 let gateMsg = ""; // kept outside the form so a live-data redraw doesn't wipe "wrong code"
-function areaGate(title, why) {
+function areaGate(title, why, { focus = true } = {}) {
   const input = h("input", { type: "password", autocomplete: "off", "aria-label": "Team code" });
   const msg = h("p", { class: "error", role: "alert" }, gateMsg);
   const what = h("span", {}, "team code");
@@ -1083,11 +1096,12 @@ function areaGate(title, why) {
     input.blur(); render();
   } },
     h("span", { class: "gate-icon", "aria-hidden": "true" }, icon("lock")),
-    h("h2", {}, `${title} is locked`),
+    h("h2", {}, `${title} ${/s$/.test(title) && title !== "Autos" ? "are" : "is"} locked`),
     h("p", { class: "muted" }, why, " Enter the ", what, ` to open it on this device for ${AREA_HOURS} hours.`),
     secret(input, "team code"), msg,
-    h("button", { class: "btn primary wide", type: "submit" }, icon("lock"), "Unlock"));
-  setTimeout(() => { if (form.isConnected && matchMedia("(hover: hover)").matches) input.focus(); }, 50);
+    h("button", { class: "btn primary wide", type: "submit" }, icon("lock"), "Unlock"),
+    askAdmin(title, S.nickname));
+  if (focus) setTimeout(() => { if (form.isConnected && matchMedia("(hover: hover)").matches) input.focus(); }, 50);
   return form;
 }
 
@@ -1202,6 +1216,20 @@ views.more = () => [pagehead("More"),
     lrow({ href: "#/settings", ic: "settings", title: "Settings", sub: `Signed in as ${S.nickname}` }),
     lrow({ href: reTeam(us()), ic: "ext", title: `${us()} on VEX Events`, external: true }))];
 
+let codeShown = null;
+function adminSection() {
+  const reqs = S.codeRequests || [];
+  return [section("Admin · team code requests"),
+    group(...(reqs.length ? reqs.map(r => lrow({ info: true, title: `${r.nickname} · ${r.email}`, sub: `${r.where} · ${ago(r.at)}`,
+      trail: h("button", { type: "button", class: "btn small", onclick: () => deleteDoc(doc(db, "codeRequests", r.id)) }, "Done") }))
+      : [h("p", { class: "empty" }, "Nobody is asking for the code right now.")]),
+      lrow({ info: true, ic: "lock", title: "Team code", sub: codeShown ?? "Hidden",
+        trail: h("button", { type: "button", class: "btn small", onclick: async () => {
+          codeShown = codeShown ? null : await getDoc(doc(db, "config", "secret")).then(d => d.data()?.code || "Not set yet", err => `Can't read it (${err.code})`);
+          render();
+        } }, codeShown ? "Hide" : "Show") })),
+    h("p", { class: "footnote" }, "Tell them the code yourself, then tap Done. Only admins see this. To change the code, update the TEAM_JOIN_CODE secret.")];
+}
 views.settings = () => {
   const nick = h("input", { value: S.nickname, maxlength: 24, "aria-label": "Nickname" });
   const msg = h("p", { class: "muted small", role: "status" });
@@ -1220,8 +1248,9 @@ views.settings = () => {
       location.hash = "#/"; location.reload();
     }),
     h("p", { class: "footnote" }, "Events, teams, rankings, the scorer and the whiteboard all follow the game. Push Back is last season's, for looking back. Saved on this device."),
+    ...(S.admin ? adminSection() : []),
     section("Locked areas"),
-    group(lrow({ info: true, ic: "lock", title: "Autos and Whiteboard", sub: areasOpen() ? `Open on this device until ${fmtTime(new Date(store.get("areasOpenUntil", 0)).toISOString())}` : "Locked: they ask for the team code",
+    group(lrow({ info: true, ic: "lock", title: "Autos, Whiteboard, scouting notes", sub: areasOpen() ? `Open on this device until ${fmtTime(new Date(store.get("areasOpenUntil", 0)).toISOString())}` : "Locked: they ask for the team code",
       trail: areasOpen() ? h("button", { type: "button", class: "btn small", onclick: lockAreas }, "Lock now") : "" })),
     section("Appearance"),
     seg([["system", "System"], ["light", "Light"], ["dark", "Dark"]], store.get("theme", "system"), v => { store.set("theme", v); transition("theme", () => { applyTheme(v); render(); }); }),

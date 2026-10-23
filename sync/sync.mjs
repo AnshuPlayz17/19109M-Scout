@@ -11,6 +11,7 @@ import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { initializeApp, cert } from "firebase-admin/app";
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
+import { getAuth } from "firebase-admin/auth";
 import { liveNow } from "./zones.mjs";
 import { computeOPR, computeRatings, predictMatches, predictorAccuracy, statsNote, allianceTeams, alliance, QUAL_ROUND } from "./model.mjs";
 
@@ -532,7 +533,24 @@ async function joinCode() {
   await db.doc("meta/lock").set({ hash: createHash("sha256").update(`19109m-pit:${code.trim()}`).digest("hex") });
 }
 
+/**
+ * Admins (the ADMIN_EMAILS secret, comma separated) get team code requests in the app and can
+ * see the code. Only their account ids are stored, so no emails end up in the database or repo.
+ */
+async function admins() {
+  const emails = (process.env.ADMIN_EMAILS || "").split(",").map(e => e.trim()).filter(Boolean);
+  if (!emails.length) return;
+  const uids = [];
+  for (const e of emails) {
+    try { uids.push((await getAuth().getUserByEmail(e)).uid); }
+    catch (err) { console.log(`Admin ${e.replace(/(.).*@/, "$1…@")}: no account yet (${err.code || err.message})`); }
+  }
+  await db.doc("meta/admins").set({ uids });
+  console.log(`${uids.length} admin${uids.length === 1 ? "" : "s"}`);
+}
+
 await joinCode();
+await admins();
 if (MODE === "autos") await autos();
 else {
   if (!process.env.ROBOTEVENTS_TOKEN) throw new Error("ROBOTEVENTS_TOKEN is not set");

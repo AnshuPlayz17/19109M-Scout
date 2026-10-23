@@ -70,6 +70,25 @@ export function secret(input, what = "password") {
   return h("div", { class: "pw" }, input, reveal);
 }
 
+/**
+ * "Forgot the team code? Ask an admin": sends a request admins see in the app (Settings).
+ * Needs a signed-in account (members, or someone who made an account but is stuck joining).
+ * `where` says what they were trying to open; `nickname` is who's asking.
+ */
+export function askAdmin(where, nickname = "") {
+  const sent = h("span", { class: "muted small" });
+  const btn = h("button", { type: "button", class: "btn plain small", onclick: async () => {
+    const u = auth.currentUser;
+    if (!u) return;
+    btn.disabled = true;
+    try {
+      await setDoc(doc(db, "codeRequests", u.uid), { nickname: String(nickname || u.email.split("@")[0]).slice(0, 24), email: u.email, where: where.slice(0, 40), at: serverTimestamp() });
+      btn.remove(); sent.textContent = "Asked. An admin will get back to you with the team code.";
+    } catch (err) { btn.disabled = false; sent.textContent = `Couldn't send: ${err.code || err.message}`; }
+  } }, "Forgot the team code? Ask an admin");
+  return h("div", { class: "ask-admin" }, btn, sent);
+}
+
 const friendly = err => ({
   "auth/invalid-credential": "Wrong email or password.",
   "auth/invalid-email": "That email doesn't look right.",
@@ -124,6 +143,7 @@ function authScreen(root, user) {
         mode !== "signin" && h("div", { class: "field" }, h("span", {}, "Team code"), secret(code, "team code")),
         msg,
         h("button", { class: "btn primary", type: "submit" }, mode === "signin" ? "Sign in" : "Join"),
+        mode === "finish" && askAdmin("Joining the team", vals.nick),
         mode === "signin" && h("button", { class: "btn", type: "button", onclick: async () => {
           if (!email.value.trim()) { msg.textContent = "Type your email first."; return; }
           try { await sendPasswordResetEmail(auth, email.value.trim()); msg.textContent = "Reset link sent. Check your email."; } catch (err) { msg.textContent = friendly(err); }

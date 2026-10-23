@@ -7,7 +7,8 @@ The team's scouting app. It runs entirely in the cloud for free. Nobody's laptop
   - every 2 seconds on match days, while one of our events is running (8am–6pm on event days, in the event's own time zone, so Worlds in Dallas works too). Each check reads only our division's matches and rankings (2 VEX Events requests); teams, skills and other divisions are re-read once a minute. That's about 65 requests a minute on match days and 40 otherwise, under VEX Events' ~100 a minute limit, and the database is only written when a score actually changes, so the free Firebase quota isn't touched. Phones update the moment a write lands.
   - every 3 seconds the rest of the time (`alwaysOn` and `idleSeconds` in `config.json`): our upcoming events are checked one per round, and lookups from the app are answered within seconds. Each run lasts just under GitHub's 6-hour limit and then starts the next; the hourly schedule is a backup. Set `alwaysOn` to `false` to go back to hourly outside events.
   - a full refresh every night (or by the next hourly run, if GitHub skips the nightly one)
-- **Locked areas:** Autos and the Whiteboard ask for the team code too, then stay open on that device for 12 hours (Settings → Lock now locks them again). It locks the screens, not the data; everyone who can sign in is a member.
+- **Locked areas:** Autos, the Whiteboard and our scouting notes (and the AI notes made from them) ask for the team code too, then stay open on that device for 12 hours (Settings → Lock now locks them again). Adding a scouting note doesn't need it. It locks the screens, not the data; everyone who can sign in is a member.
+- **Forgot the team code:** every place that asks for it has "Ask an admin"; admins (`ADMIN_EMAILS`) see who asked in Settings, with the code.
 - **Pit display lock:** Lock & full screen on the pit display keeps it there; leaving needs the team code (checked against a hash the sync stores in `meta/lock`).
 - **Two games:** Settings → Game switches the whole app between Override (this season) and Push Back (last season): events, teams, rankings, scorer, whiteboard field. Push Back data is refreshed weekly, and can be loaded on demand from Actions → Scout sync → Run workflow with game `pushback`.
 - **Privacy:** every page needs an account, and an account needs the team code. Our autos and scouting notes are only readable by members.
@@ -74,6 +75,7 @@ In this repo (and the robot repo, for `FIREBASE_SERVICE_ACCOUNT` only) go to **S
 | `ROBOTEVENTS_TOKEN` | Your VEX Events API token (the long `eyJ…` one; the name is from when it was RobotEvents) |
 | `FIREBASE_SERVICE_ACCOUNT` | The entire contents of the `.json` file from step 1.6 |
 | `TEAM_JOIN_CODE` | A code teammates type to join. Pick something not guessable |
+| `ADMIN_EMAILS` | *Optional.* Emails of the app's admins, comma separated (their accounts must exist). Admins get "Ask an admin" requests for the team code in Settings and can see the code there. Only account ids are stored. |
 | `ANTHROPIC_API_KEY` | *Optional.* An API key from <https://console.anthropic.com>, for AI notes. Set a monthly spend limit there |
 
 Secrets are never shown again after saving, and they never appear in the code or logs.

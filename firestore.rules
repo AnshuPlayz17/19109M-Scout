@@ -8,6 +8,11 @@ service cloud.firestore {
     function signedIn() { return request.auth != null; }
     function isMember() { return signedIn() && exists(/databases/$(database)/documents/members/$(request.auth.uid)); }
     function goodNickname(n) { return n is string && n.size() > 0 && n.size() <= 24; }
+    // Admins are listed by account id in meta/admins (the sync fills it from the ADMIN_EMAILS secret).
+    function isAdmin() {
+      return signedIn() && exists(/databases/$(database)/documents/meta/admins)
+        && request.auth.uid in get(/databases/$(database)/documents/meta/admins).data.uids;
+    }
 
     match /members/{uid} {
       allow read: if isMember() || (signedIn() && request.auth.uid == uid);
@@ -59,6 +64,19 @@ service cloud.firestore {
     }
 
     match /meta/{d} { allow read: if isMember(); }
+
+    // "Forgot the team code? Ask an admin": anyone signed in (members, and people stuck at the
+    // join screen) can ask; only admins see the requests. One request per account.
+    match /codeRequests/{uid} {
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['nickname', 'email', 'where', 'at'])
+        && request.resource.data.nickname is string && request.resource.data.nickname.size() <= 24
+        && request.resource.data.email is string && request.resource.data.email.size() <= 120
+        && request.resource.data.where is string && request.resource.data.where.size() <= 40;
+      allow read, delete: if isAdmin() || (signedIn() && request.auth.uid == uid);
+    }
+    // The team code itself: admins can read it in the app so they can pass it on.
+    match /config/secret { allow read: if isAdmin(); }
     match /events/{d} { allow read: if isMember(); }
     match /index/{d} { allow read: if isMember(); }
     match /teamstats/{d} { allow read: if isMember(); }

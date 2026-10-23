@@ -65,6 +65,7 @@ jobs:
           ROBOTEVENTS_TOKEN: ${{ secrets.ROBOTEVENTS_TOKEN }}
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           TEAM_JOIN_CODE: ${{ secrets.TEAM_JOIN_CODE }}
+          ADMIN_EMAILS: ${{ secrets.ADMIN_EMAILS }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       - name: Start the next run (always on)
         if: success()
