@@ -53,6 +53,23 @@ export const h = (tag, attrs = {}, ...kids) => {
   return n;
 };
 
+/**
+ * A password-style field with a Show / Hide button, so people can check what they typed.
+ * Hidden by default. `what` names it for screen readers ("password", "team code").
+ */
+export function secret(input, what = "password") {
+  input.type = "password";
+  const reveal = h("button", { type: "button", class: "reveal", "aria-label": `Show ${what}`, "aria-pressed": "false", onclick: () => {
+    const show = input.type === "password";
+    input.type = show ? "text" : "password";
+    reveal.textContent = show ? "Hide" : "Show";
+    reveal.setAttribute("aria-pressed", String(show));
+    reveal.setAttribute("aria-label", `${show ? "Hide" : "Show"} ${what}`);
+    input.focus();
+  } }, "Show");
+  return h("div", { class: "pw" }, input, reveal);
+}
+
 const friendly = err => ({
   "auth/invalid-credential": "Wrong email or password.",
   "auth/invalid-email": "That email doesn't look right.",
@@ -75,17 +92,9 @@ function authScreen(root, user) {
       const keep = k => e => { vals[k] = e.target.value; };
       const email = h("input", { type: "email", autocomplete: "email", required: true, placeholder: "you@school.ca", value: vals.email, oninput: keep("email") });
       const pass = h("input", { id: "pw", type: "password", autocomplete: mode === "signin" ? "current-password" : "new-password", required: true, minlength: 6 });
-      // Hidden by default; the button shows it so people can check what they typed.
-      const reveal = h("button", { type: "button", class: "reveal", "aria-label": "Show password", "aria-pressed": "false", onclick: () => {
-        const show = pass.type === "password";
-        pass.type = show ? "text" : "password";
-        reveal.textContent = show ? "Hide" : "Show";
-        reveal.setAttribute("aria-pressed", String(show));
-        reveal.setAttribute("aria-label", show ? "Hide password" : "Show password");
-      } }, "Show");
-      const passBox = h("div", { class: "pw" }, pass, reveal);
+      const passBox = secret(pass, "password");
       const nick = h("input", { type: "text", maxlength: 24, required: true, placeholder: "What the team calls you", value: vals.nick, oninput: keep("nick") });
-      const code = h("input", { type: "text", required: true, autocomplete: "off", placeholder: "Ask a teammate", value: vals.code, oninput: keep("code") });
+      const code = h("input", { type: "password", required: true, autocomplete: "off", placeholder: "Ask a teammate", value: vals.code, oninput: keep("code") });
       const busy = b => form.querySelectorAll("button, input").forEach(x => { x.disabled = b; });
       const join = async u => {
         await setDoc(doc(db, "members", u.uid), { nickname: nick.value.trim(), code: code.value.trim(), joinedAt: serverTimestamp() });
@@ -112,7 +121,7 @@ function authScreen(root, user) {
         mode !== "finish" && h("label", { class: "field" }, "Email", email),
         mode !== "finish" && h("div", { class: "field" }, h("label", { for: "pw" }, "Password"), passBox),
         mode !== "signin" && h("label", { class: "field" }, "Nickname", nick),
-        mode !== "signin" && h("label", { class: "field" }, "Team code", code),
+        mode !== "signin" && h("div", { class: "field" }, h("span", {}, "Team code"), secret(code, "team code")),
         msg,
         h("button", { class: "btn primary", type: "submit" }, mode === "signin" ? "Sign in" : "Join"),
         mode === "signin" && h("button", { class: "btn", type: "button", onclick: async () => {

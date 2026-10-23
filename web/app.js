@@ -1,5 +1,5 @@
 // 19109M Scout: events, teams, match predictions, scouting notes, autos, checklists and a match scorer.
-import { db, h, requireMember, signOut, auth, splash, hideSplash, rememberMember } from "./fb.js";
+import { db, h, requireMember, signOut, auth, splash, hideSplash, rememberMember, secret } from "./fb.js";
 import { createBoard } from "./board.js";
 import {
   doc, getDoc, onSnapshot, collection, query, where, addDoc, setDoc, updateDoc, deleteDoc, serverTimestamp,
@@ -1038,7 +1038,7 @@ async function openUnlock() {
       location.hash = "#/";
     } },
     h("div", { class: "head" }, h("h3", {}, "Unlock pit display"), h("button", { class: "btn small plain", type: "button", onclick: close }, "Cancel")),
-    h("p", { class: "muted small" }, `Enter the ${what} to leave the pit display.`), input, msg,
+    h("p", { class: "muted small" }, `Enter the ${what} to leave the pit display.`), secret(input, what), msg,
     h("button", { class: "btn primary wide", type: "submit" }, icon("lock"), "Unlock"));
   box.addEventListener("keydown", e => { if (e.key === "Escape") close(); });
   document.body.append(bg, box);
