@@ -48,10 +48,15 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 let requests = 0;
 // One shared queue for every request, so calls made in parallel still stay under the
 // ~100 requests/minute limit, and a rate-limit pause holds all of them.
-let nextSlot = 0;
+// The gap between requests adapts: VEX Events' real limit is lower than it looks (a steady
+// ~90 a minute gets "429 Too Many Requests" within minutes). Each 429 doubles the gap (up to 10 s)
+// and pauses a minute; each success shaves 2 ms back off, so after a quiet ~10 minutes it's back
+// to the fastest setting. Rounds of the fast loop slow down with it automatically.
+const FASTEST = 650;
+let nextSlot = 0, gap = FASTEST;
 async function slot() {
   const t = Math.max(Date.now(), nextSlot);
-  nextSlot = t + 650;
+  nextSlot = t + gap;
   await sleep(t - Date.now());
 }
 
@@ -64,9 +69,10 @@ async function get(path, params = {}) {
     await slot();
     requests++;
     const res = await fetch(url, { headers: { Authorization: `Bearer ${process.env.ROBOTEVENTS_TOKEN}`, Accept: "application/json" } });
-    if (res.ok) return res.json();
+    if (res.ok) { gap = Math.max(FASTEST, gap - 2); return res.json(); }
     if ((res.status === 403 || res.status === 429 || res.status >= 500) && attempt < 4) {
-      console.log(`  ${res.status} on ${url.pathname}, waiting a minute`);
+      if (res.status === 429) gap = Math.min(10e3, gap * 2);
+      console.log(`  ${res.status} on ${url.pathname}, waiting a minute${res.status === 429 ? `; then one request every ${(gap / 1000).toFixed(1)} s` : ""}`);
       nextSlot = Math.max(nextSlot, Date.now() + 61e3);
       continue;
     }
@@ -430,7 +436,12 @@ async function live(ctx) {
       }
       rounds++;
       if (asked) { asked = false; await handleRequests(ctx); await pastSeasonRequests(); }
-      if (Date.now() - chores > 60e3) { chores = Date.now(); await writeStatus(ctx, { lastQuick: FieldValue.serverTimestamp() }); }
+      if (Date.now() - chores > 60e3) {
+        chores = Date.now();
+        // The real pace, for the app: a round is 2 requests, so never faster than 2 gaps.
+        const pace = Math.max(running.length ? config.liveSeconds : config.idleSeconds, Math.ceil((2 * gap) / 1000));
+        await writeStatus(ctx, { lastQuick: FieldValue.serverTimestamp(), [running.length ? "liveSeconds" : "idleSeconds"]: pace });
+      }
       // Every half hour, pick up newly registered events and newly opened ones.
       if (Date.now() - refreshed > 30 * 60e3) {
         refreshed = Date.now();
