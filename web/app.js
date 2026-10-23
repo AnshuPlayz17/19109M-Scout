@@ -774,6 +774,10 @@ views.checklist = () => {
 
 // ---- match scorer + timer
 const PTS = { alliancePin: 5, yellowPin: 10, midfield: 8 };
+// Override has 63 pins and each half scores on its own, so a match can't have more than 126
+// scored halves between both alliances. Two robots per alliance can end in midfield.
+const FIELD_HALVES = 126, MIDFIELD_MAX = 2;
+const halvesUsed = () => ["red", "blue"].reduce((s, c) => s + score[c].alliancePin + score[c].yellowPin, 0);
 const score = { red: { alliancePin: 0, yellowPin: 0, midfield: 0 }, blue: { alliancePin: 0, yellowPin: 0, midfield: 0 }, bonus: "" };
 const timer = { phase: "ready", left: 15, running: false, last: 0, raf: 0 };
 const PHASE_LEN = { ready: 15, auto: 15, autoDone: 15, driver: 105, done: 105 };
@@ -818,13 +822,14 @@ views.scorer = () => {
   svgEl("circle", { class: "track", cx: size / 2, cy: size / 2, r: rad, fill: "none", "stroke-width": stroke }, dial);
   const arc = svgEl("circle", { id: "clock-arc", cx: size / 2, cy: size / 2, r: rad, fill: "none", stroke: "var(--accent)", "stroke-width": stroke, "stroke-linecap": "round", "stroke-dasharray": `${circ * (timer.left / PHASE_LEN[timer.phase])} ${circ}` }, dial);
   arc.dataset.c = circ;
-  const counter = (c, k, label, max) => h("div", { class: "counter" }, h("span", { class: "lbl" }, label, h("small", {}, ` · ${PTS[k]} each`)),
+  const room = (c, k) => (k === "midfield" ? MIDFIELD_MAX - score[c][k] : FIELD_HALVES - halvesUsed());
+  const counter = (c, k, label) => h("div", { class: "counter" }, h("span", { class: "lbl" }, label, h("small", {}, ` · ${PTS[k]} each`)),
     h("div", { class: "stepper" },
-      h("button", { type: "button", "aria-label": `Fewer ${label}, ${c}`, onclick: () => { score[c][k] = Math.max(0, score[c][k] - 1); render(); } }, "−"),
+      h("button", { type: "button", "aria-label": `Fewer ${label}, ${c}`, disabled: score[c][k] <= 0, onclick: () => { score[c][k] = Math.max(0, score[c][k] - 1); render(); } }, "−"),
       h("output", {}, score[c][k]),
-      h("button", { type: "button", "aria-label": `More ${label}, ${c}`, onclick: () => { score[c][k] = Math.min(max, score[c][k] + 1); render(); } }, "+")));
+      h("button", { type: "button", "aria-label": `More ${label}, ${c}`, disabled: room(c, k) <= 0, onclick: () => { if (room(c, k) > 0) score[c][k]++; render(); } }, "+")));
   const sideBox = c => h("div", { class: `team ${c}` }, h("div", { class: "row between" }, h("h3", {}, c === "red" ? "Red" : "Blue"), h("span", { class: `total${changed(`score${c}`, total(c)) ? " flash" : ""}`, "aria-live": "polite" }, total(c))),
-    counter(c, "alliancePin", "Alliance pins", 99), counter(c, "yellowPin", "Owned yellow pins", 99), counter(c, "midfield", "In midfield", 2));
+    counter(c, "alliancePin", "Alliance pin halves"), counter(c, "yellowPin", "Owned yellow pin halves"), counter(c, "midfield", "Robots in midfield"));
   const lead = total("red") - total("blue");
   return [pagehead("Scorer"),
     h("div", { class: "cols" },
@@ -835,7 +840,10 @@ views.scorer = () => {
       h("div", { class: "col" }, h("div", { class: "board" }, sideBox("red"), sideBox("blue")),
         card(h("div", { class: "row between" }, h("h3", {}, "Autonomous bonus"), h("span", { class: "muted small" }, lead === 0 ? "Tied" : `${lead > 0 ? "Red" : "Blue"} leads by ${Math.abs(lead)}`)),
           seg([["", "None"], ["red", "Red +12"], ["blue", "Blue +12"]], score.bonus, v => { score.bonus = v; render(); }, "red-blue")),
-        h("button", { class: "btn plain", onclick: () => { for (const c of ["red", "blue"]) for (const k in PTS) score[c][k] = 0; score.bonus = ""; render(); } }, "Clear scores")))];
+        h("button", { class: "btn plain", onclick: () => { for (const c of ["red", "blue"]) for (const k in PTS) score[c][k] = 0; score.bonus = ""; render(); } }, "Clear scores"),
+        h("p", { class: "footnote" }, halvesUsed() >= FIELD_HALVES
+          ? "All 126 pin halves are counted (63 pins on the field, 2 halves each). Take some off to add more."
+          : `Each visible pin half scores. ${FIELD_HALVES - halvesUsed()} of 126 halves left (63 pins on the field); up to 2 robots per alliance in midfield.`)))];
 };
 
 // ---- win predictor
