@@ -109,17 +109,40 @@ service cloud.firestore {
     // keeps to the daily spending cap). Each person sees only their own.
     match /aiJobs/{id} {
       allow create: if isMember()
-        && request.resource.data.keys().hasOnly(['kind', 'by', 'nickname', 'at', 'game', 'status', 'messages', 'open', 'event'])
+        && request.resource.data.keys().hasOnly(['kind', 'by', 'nickname', 'at', 'game', 'status', 'messages', 'open', 'event', 'match'])
         && request.resource.data.by == request.auth.uid
         && request.resource.data.status == 'new'
         && request.resource.data.game in ['override', 'pushback']
         && goodNickname(request.resource.data.nickname)
         && ((request.resource.data.kind == 'chat' && request.resource.data.messages is list && request.resource.data.messages.size() <= 12)
-          || (request.resource.data.kind == 'report' && request.resource.data.event is string && request.resource.data.event.size() <= 12));
+          || (request.resource.data.kind == 'report' && request.resource.data.event is string && request.resource.data.event.size() <= 12)
+          || (request.resource.data.kind == 'plan' && request.resource.data.event is string && request.resource.data.event.size() <= 12
+            && request.resource.data.match is string && request.resource.data.match.size() <= 20));
       allow read, delete: if isMember() && resource.data.by == request.auth.uid;
     }
-    // Scout for me reports, shared with the whole team.
+    // Scout for me reports and match game plans (written by the sync), shared with the whole team.
     match /reports/{d} { allow read: if isMember(); }
+    match /plans/{d} { allow read: if isMember(); }
+
+    // Alliance selection: which teams are already taken, live for everyone ("override-5002").
+    match /selection/{id} {
+      allow read: if isMember();
+      allow create, update: if isMember()
+        && request.resource.data.keys().hasOnly(['taken', 'by', 'nickname', 'at'])
+        && request.resource.data.taken is list && request.resource.data.taken.size() <= 200
+        && request.resource.data.by == request.auth.uid && goodNickname(request.resource.data.nickname);
+    }
+
+    // Scouting assignments for an event: who scouts which teams ("override-5002").
+    match /assignments/{id} {
+      allow read: if isMember();
+      allow create, update: if isMember()
+        && request.resource.data.keys().hasOnly(['scouts', 'teams', 'by', 'nickname', 'at'])
+        && request.resource.data.scouts is list && request.resource.data.scouts.size() <= 40
+        && request.resource.data.teams is map && request.resource.data.teams.size() <= 300
+        && request.resource.data.by == request.auth.uid && goodNickname(request.resource.data.nickname);
+      allow delete: if isMember();
+    }
 
     // Phones that want "Queue now" notifications (Web Push). Each person manages their own.
     match /pushSubs/{id} {

@@ -3,7 +3,7 @@ import { db, h, requireMember, signOut, auth, splash, hideSplash, rememberMember
 import { createBoard } from "./board.js";
 import { AXES, profile } from "./profile.js";
 import {
-  doc, getDoc, onSnapshot, collection, query, where, addDoc, setDoc, updateDoc, deleteDoc, serverTimestamp, orderBy, limit,
+  doc, getDoc, getDocs, onSnapshot, collection, query, where, addDoc, setDoc, updateDoc, deleteDoc, serverTimestamp, orderBy, limit, arrayUnion, arrayRemove,
 } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 import { EmailAuthProvider, reauthenticateWithCredential } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
 
@@ -414,6 +414,8 @@ views.home = () => {
       r ? glance([[`#${r.rank}`, "Rank", "accent"], [`${r.wins}-${r.losses}-${r.ties}`, "Record"], [r.wp, "WP"], [o?.matches >= 3 ? Math.round(o.opr) : "–", "OPR"]]) : null));
   }
   if (fe && ev === undefined) left.push(...skeleton(200, 160));
+  const mineCard = myScouting(fe);
+  if (mineCard) left.push(mineCard);
   // Before the match list is out: our season so far, and who to look out for at the event.
   if (!ev?.ourMatches?.length) {
     watchTeam(us());
@@ -563,6 +565,9 @@ views.event = (id, tab) => {
   }
   out.push(section("More"), group(
     lrow({ href: `#/predict/${id}`, ic: "predict", title: "Win predictor", sub: "Pick any four teams here" }),
+    lrow({ href: `#/select/${id}`, ic: "trophy", title: "Alliance selection", sub: "Cross off teams as they're picked; best still available" }),
+    lrow({ href: `#/assign/${id}`, ic: "teams", title: "Scouting assignments", sub: "Split the teams here between our scouts" }),
+    lrow({ ic: "download", title: "Export scouting", sub: "Scouting notes, pit sheets and match notes as a spreadsheet (CSV)", onclick: () => exportScouting(ev) }),
     !ev.ours ? lrow({ ic: "refresh", title: S.requested.has(`event:${id}`) ? "Refresh requested" : "Refresh this event", sub: `Updated ${ago(ev.updatedAt)}`, onclick: () => request("event", id) }) : null,
     lrow({ href: reEvent(ev.sku), ic: "ext", title: "Open on VEX Events", external: true })));
   return out;
@@ -596,7 +601,7 @@ views.match = (eid, mid) => {
       h("div", { style: "flex:1;display:flex;flex-direction:column;gap:8px;min-width:0" }, h("span", { class: "eyebrow" }, m.scored ? "Predicted before the match" : "Win chance"), probBar(p)),
       ring(Math.max(p, 1 - p), { size: 64, color: p >= 0.5 ? "var(--red)" : "var(--blue)", label: p >= 0.5 ? "red" : "blue" }))) : null,
     h("div", { class: "cols", style: "grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr))" }, side_("red"), side_("blue")),
-    ...(m.red.teams.includes(us()) || m.blue.teams.includes(us()) ? matchNotes(ev, m) : [])];
+    ...(m.red.teams.includes(us()) || m.blue.teams.includes(us()) ? [...gamePlan(ev, m), ...matchNotes(ev, m)] : [])];
 };
 
 // ---- notes on our own matches: what went right, what went wrong, what to change. One per person
@@ -1751,6 +1756,182 @@ function scoutReport(id) {
   return out;
 }
 
+// ---------------------------------------------------------------- game plan for one of our matches
+// The sync writes it with AI (sync/assist.mjs plan()) from the four teams' stats, notes and our scouting.
+const planWait = {};
+const watchPlan = mid => watch(`plan${mid}`, doc(db, "plans", `${G.key}-${mid}`), s => { S.plans ||= {}; S.plans[mid] = s.exists() ? s.data({ serverTimestamps: "estimate" }) : null; });
+async function makePlan(ev, m) {
+  if (!navigator.onLine) { toast("You're offline. Try again when you're connected.", "bad"); return; }
+  planWait[m.id] = "Asking Scout…"; render();
+  try {
+    const ref = await addDoc(collection(db, "aiJobs"), { kind: "plan", event: String(ev.id), match: String(m.id), by: user.uid, nickname: S.nickname, at: serverTimestamp(), game: G.key, status: "new", open: areasOpen() });
+    const un = onSnapshot(ref, snap => {
+      const j = snap.data(); if (!j) return;
+      if (j.step) planWait[m.id] = j.step;
+      if (j.status === "done" || j.status === "error") { un(); delete planWait[m.id]; if (j.status === "error") toast(j.error || "Couldn't make a plan.", "bad"); deleteDoc(ref).catch(() => {}); }
+      refresh();
+    });
+  } catch (err) { delete planWait[m.id]; toast(`Couldn't ask: ${err.code || err.message}`, "bad"); render(); }
+}
+function gamePlan(ev, m) {
+  watchPlan(m.id);
+  const p = S.plans?.[m.id], busy = planWait[m.id];
+  const btn = h("button", { type: "button", class: `btn${p ? "" : " primary"}`, disabled: !!busy || !aiReady(), onclick: () => makePlan(ev, m) }, icon("scout"), busy ? busy : p ? "Make a new plan" : "Make a game plan");
+  const out = [section("Game plan")];
+  if (!p) return [...out, card(h("p", { class: "muted small" }, aiReady() ? "Scout reads up on all four teams (stats, notes, our scouting and pit sheets) and writes a plan for this match." : "Game plans need AI: an admin adds the ANTHROPIC_API_KEY secret."), btn)];
+  if (p.usedScouting && !areasOpen()) return [...out, areaGate("Game plan", "This plan uses our scouting notes.", { focus: false })];
+  const list = (title, xs) => xs?.length ? h("div", {}, h("span", { class: "eyebrow" }, title), h("ul", {}, xs.map(x => h("li", {}, x)))) : null;
+  const para = (title, text) => text ? h("div", { class: "notepara" }, h("span", { class: "eyebrow" }, title), h("p", {}, text)) : null;
+  return [...out, card(h("p", {}, p.summary), para("Autonomous", p.auto), para("Our job", p.us), para("Ask our partner", p.partner),
+    h("div", { class: "bullets" }, list("Watch out for", p.threats), list("Drive team checklist", p.checklist)), para("Endgame", p.endgame),
+    h("p", { class: "muted small" }, `By ${p.by || "Scout"} · ${ago(p.at)} · AI, check it against what you see`), btn)];
+}
+
+// ---------------------------------------------------------------- alliance selection
+// Cross teams off as they're picked (shared live with everyone); the best still available stay on top.
+// Order: the Scout for me report if there is one, else the event's ratings.
+const watchSelection = id => watch(`sel${id}`, doc(db, "selection", `${G.key}-${id}`), s => { S.selection ||= {}; S.selection[id] = s.exists() ? s.data({ serverTimestamps: "estimate" }) : null; });
+function takeTeam(id, n, taken) {
+  setDoc(doc(db, "selection", `${G.key}-${id}`), { taken: taken ? arrayUnion(n) : arrayRemove(n), by: user.uid, nickname: S.nickname, at: serverTimestamp() }, { merge: true })
+    .catch(err => toast(`Couldn't save: ${err.code || err.message}`, "bad"));
+}
+views.select = id => {
+  watchEvent(id); watchReport(id); watchSelection(id);
+  const ev = S.events[id], rep_ = S.reports[id], sel = S.selection?.[id];
+  if (!ev) return [pagehead("Alliance selection"), ...(ev === null ? [notice("Load this event first from its page.", "Not loaded")] : skeleton(80, 300))];
+  const taken = new Set(sel?.taken || []);
+  const report = rep_?.status === "done" ? new Map(rep_.teams.map(t => [t.number, t])) : null;
+  const rk = n => ev.rankings.find(r => r.team === n);
+  const rows = ev.teams.map(t => {
+    const r = report?.get(t.number), rate = ev.ratings?.[t.number]?.rating ?? null;
+    return { n: t.number, name: t.name, score: r ? r.score : rate === null ? -1 : ratingFrac(rate), tier: r?.tier, rank: rk(t.number), opr: ev.oprs?.[t.number], call: r?.ai?.pick };
+  }).sort((a, b) => b.score - a.score);
+  const ourRate = ev.ratings?.[us()]?.rating ?? 0;
+  const left = rows.filter(r => !taken.has(r.n) && r.n !== us()), gone = rows.filter(r => taken.has(r.n));
+  const row = r => h("div", { class: `selrow${taken.has(r.n) ? " taken" : ""}` },
+    h("a", { class: "selteam", href: teamHref(r.n) }, badge(r.n), h("span", { class: "tx" }, h("b", {}, r.name || r.n),
+      h("span", {}, [r.n, r.rank ? `#${r.rank.rank} here (${r.rank.wins}-${r.rank.losses}-${r.rank.ties})` : null, r.opr?.matches >= 3 ? `OPR ${Math.round(r.opr.opr)}` : null, r.call && r.call !== "maybe" ? r.call : null].filter(Boolean).join(" · ")))),
+    r.tier ? h("span", { class: `tier ${tierClass(r.tier)}` }, r.tier.replace(" pick", "")) : h("span"),
+    h("button", { type: "button", class: `btn small${taken.has(r.n) ? "" : " plain"}`, onclick: () => takeTeam(id, r.n, !taken.has(r.n)) }, taken.has(r.n) ? "Undo" : "Taken"));
+  // "With us": win chance of us + them against an average alliance at this event.
+  const withUs = n => 1 / (1 + Math.exp(-1.1 * (ourRate + (ev.ratings?.[n]?.rating ?? 0))));
+  const best = left.slice(0, 3);
+  return [pagehead("Alliance selection", `${ev.name} · ${left.length} available, ${gone.length} taken`),
+    best.length ? h("div", { class: "bestpicks" }, best.map((r, i) => h("a", { class: "bestpick", href: teamHref(r.n) },
+      h("span", { class: "eyebrow" }, i === 0 ? "Best available" : `Next best #${i + 1}`), h("b", {}, r.n), h("span", { class: "muted small" }, r.name || ""),
+      ev.ratings?.[r.n] ? h("span", { class: "small" }, `${pct(withUs(r.n))} with us vs an average alliance`) : null))) : notice("Every team is taken.", "No one left"),
+    section("Available"), h("div", { class: "group-list" }, left.map(row)),
+    gone.length ? section("Taken") : null, gone.length ? h("div", { class: "group-list" }, gone.map(row)) : null,
+    h("p", { class: "footnote" }, `${report ? "Order from the Scout for me report." : "Order from the event's ratings. Make a Scout for me report for a better order."} Everyone sees the same list live${sel?.nickname ? `; last change by ${sel.nickname} ${ago(sel.at)}` : ""}.`),
+    h("div", { class: "row" }, report ? null : h("a", { class: "btn", href: `#/scout/${id}` }, icon("scout"), "Scout for me report"),
+      gone.length ? h("button", { type: "button", class: "btn danger", onclick: () => { if (confirm("Clear every taken team?")) setDoc(doc(db, "selection", `${G.key}-${id}`), { taken: [], by: user.uid, nickname: S.nickname, at: serverTimestamp() }); } }, "Reset") : null)];
+};
+
+// ---------------------------------------------------------------- scouting assignments
+// Pick who's scouting, then split the teams at the event between them: teams in our upcoming
+// matches first, then the strongest. Each scout sees their list (and what's done) here and on Home.
+const watchAssign = id => watch(`asg${id}`, doc(db, "assignments", `${G.key}-${id}`), s => { S.assign ||= {}; S.assign[id] = s.exists() ? s.data() : null; });
+const watchEventScouting = id => watch(`evsc${id}`, query(collection(db, "scouting"), where("event", "==", String(id))), s => {
+  S.evScouting ||= {}; S.evScouting[id] = s.docs.map(d => d.data()).filter(x => (x.game || "override") === G.key);
+});
+let membersList = null, assignPick = null, assignEditing = false;
+async function loadMembers() {
+  if (membersList) return;
+  membersList = [];
+  try { membersList = (await getDocs(collection(db, "members"))).docs.map(d => ({ uid: d.id, nickname: d.data().nickname })).sort((a, b) => a.nickname.localeCompare(b.nickname)); }
+  catch (err) { toast(`Couldn't load the team list (${err.code})`, "bad"); }
+  refresh();
+}
+function splitTeams(ev, scouts) {
+  const ours = new Set(), order = [];
+  for (const om of ev.ourMatches || []) { const m = ev.matches.find(x => x.id === om.id); if (m && !m.scored) [...om.partners, ...om.opponents].forEach(t => ours.add(t)); }
+  const rest = ev.teams.map(t => t.number).filter(n => n !== us() && !ours.has(n)).sort((a, b) => (ev.ratings?.[b]?.rating ?? 0) - (ev.ratings?.[a]?.rating ?? 0));
+  order.push(...[...ours].filter(n => n !== us()), ...rest);
+  const teams = {};
+  order.forEach((n, i) => { teams[n] = scouts[i % scouts.length].uid; });
+  return teams;
+}
+views.assign = id => {
+  watchEvent(id); watchAssign(id); watchEventScouting(id); loadMembers();
+  const ev = S.events[id], a = S.assign?.[id], done = S.evScouting?.[id] || [];
+  if (!ev) return [pagehead("Scouting assignments"), ...(ev === null ? [notice("Load this event first from its page.", "Not loaded")] : skeleton(80, 300))];
+  const isDone = (n, uid) => done.some(x => x.team === n && x.by === uid);
+  const out = [pagehead("Scouting assignments", ev.name)];
+  if (!a || assignEditing) {
+    assignPick ||= new Set((a?.scouts || []).map(x => x.uid));
+    out.push(section("Who's scouting?"), group(...(membersList || []).map(mb => lrow({ info: true, title: mb.nickname, sub: mb.uid === user.uid ? "You" : "",
+      trail: h("input", { type: "checkbox", class: "check", checked: assignPick.has(mb.uid) || null, "aria-label": mb.nickname, onchange: e => { e.target.checked ? assignPick.add(mb.uid) : assignPick.delete(mb.uid); } }) }))),
+      h("div", { class: "row" },
+        h("button", { type: "button", class: "btn primary", onclick: () => {
+          const scouts = (membersList || []).filter(mb => assignPick.has(mb.uid));
+          if (!scouts.length) { toast("Pick at least one scout.", "bad"); return; }
+          setDoc(doc(db, "assignments", `${G.key}-${id}`), { scouts, teams: splitTeams(ev, scouts), by: user.uid, nickname: S.nickname, at: serverTimestamp() })
+            .catch(err => toast(`Couldn't save: ${err.code || err.message}`, "bad"));
+          assignPick = null; assignEditing = false; render();
+        } }, `Split ${ev.teams.length - 1} teams`),
+        a ? h("button", { type: "button", class: "btn", onclick: () => { assignPick = null; assignEditing = false; render(); } }, "Cancel") : null),
+      h("p", { class: "footnote" }, "Teams in our next matches go first, then the strongest, dealt out evenly. Splitting again replaces the old split."));
+    return out;
+  }
+  const mineCount = Object.values(a.teams).filter(u => u === user.uid).length;
+  if (mineCount) out.push(h("p", { class: "footnote", style: "margin-top:0" }, `You have ${mineCount} teams. Tap one to scout it.`));
+  for (const sc of a.scouts) {
+    const list = Object.entries(a.teams).filter(([, u]) => u === sc.uid).map(([n]) => n);
+    const n = list.filter(t => isDone(t, sc.uid)).length;
+    out.push(section(`${sc.nickname}${sc.uid === user.uid ? " (you)" : ""} · ${n} of ${list.length} done`),
+      h("div", { class: "group-list assignlist" }, list.map(t => h("a", { class: `assignteam${isDone(t, sc.uid) ? " done" : ""}`, href: teamHref(t) }, isDone(t, sc.uid) ? icon("check") : h("span", { class: "dot" }), h("b", {}, t), h("span", { class: "muted small" }, teamName(t))))));
+  }
+  out.push(h("p", { class: "footnote" }, `Split by ${a.nickname}. A team counts as done when its scout saves a scouting note on it at this event.`),
+    h("button", { type: "button", class: "btn", onclick: () => { assignPick = new Set(a.scouts.map(x => x.uid)); assignEditing = true; render(); } }, "Change scouts and split again"));
+  return out;
+};
+/** Home: this person's scouting list for the event that matters now. */
+function myScouting(fe) {
+  if (!fe) return null;
+  watchAssign(fe.id);
+  const a = S.assign?.[fe.id];
+  const mine = a ? Object.entries(a.teams).filter(([, u]) => u === user.uid).map(([n]) => n) : [];
+  if (!mine.length) return null;
+  watchEventScouting(fe.id);
+  const done = (S.evScouting?.[fe.id] || []).filter(x => x.by === user.uid).map(x => x.team);
+  const left = mine.filter(n => !done.includes(n));
+  return h("a", { class: "notice scoutme", href: `#/assign/${fe.id}` }, h("b", {}, left.length ? `Your scouting: ${mine.length - left.length} of ${mine.length} done` : "Your scouting is done"),
+    h("span", {}, left.length ? `Next: ${left.slice(0, 6).join(", ")}${left.length > 6 ? "…" : ""}` : "Nice work. Check the list for anyone else's teams."));
+}
+
+// ---------------------------------------------------------------- export to a spreadsheet
+async function exportScouting(ev) {
+  if (!areasOpen()) { toast("Unlock scouting notes first (open a team page and enter the team code).", "bad"); return; }
+  toast("Getting the notes…");
+  try {
+    const nums = ev.teams.map(t => t.number), rows = [];
+    const cols = ["Type", "Team", "Name", "Match", "By", "When", "Stars", "Auto", "Auto pieces", "Drivetrain", "Auto side", "Endgame", "Defense", "Driver", "Reliability", "Tags", "Notes",
+      "Motors", "Intake", "Scoring", "Their autos", "Game plan", "Went well", "Went wrong", "Next time"];
+    const when = t => (t?.toDate ? t.toDate().toISOString().slice(0, 16).replace("T", " ") : "");
+    const sc = (await getDocs(query(collection(db, "scouting"), where("event", "==", String(ev.id))))).docs.map(d => d.data()).filter(x => (x.game || "override") === G.key);
+    for (const x of sc) rows.push({ Type: "Scouting", Team: x.team, Name: teamName(x.team), Match: x.match, By: x.nickname, When: when(x.at), Stars: x.rating, Auto: x.auto, "Auto pieces": x.autoPins,
+      Drivetrain: x.drive, "Auto side": x.autoSide, Endgame: x.endgame, Defense: SCOUT_MORE[3].options[(x.defense || 0) - 1], Driver: SCOUT_MORE[4].options[(x.driver || 0) - 1],
+      Reliability: x.reliable, Tags: (x.tags || []).join("; "), Notes: x.notes });
+    for (let i = 0; i < nums.length; i += 30) {
+      const part = nums.slice(i, i + 30);
+      const pits = await Promise.all(part.map(n => getDoc(doc(db, "pits", `${n}__${G.key}`))));
+      pits.forEach(p => { if (!p.exists()) return; const x = p.data();
+        rows.push({ Type: "Pit", Team: x.team, Name: teamName(x.team), By: x.nickname, When: when(x.at), Drivetrain: x.drive, Endgame: x.endgame, Notes: x.notes, Motors: x.motors, Intake: x.intake,
+          Scoring: x.scoring, "Their autos": x.autos, "Game plan": x.strategy }); });
+    }
+    const mn = (await getDocs(query(collection(db, "matchNotes"), where("event", "==", String(ev.id))))).docs.map(d => d.data()).filter(x => x.game === G.key);
+    for (const x of mn) rows.push({ Type: "Our match", Team: x.teams.join(" "), Match: x.name, By: x.nickname, When: when(x.at), "Went well": x.good, "Went wrong": x.bad, "Next time": x.next });
+    if (!rows.length) { toast("No scouting notes for this event yet.", "bad"); return; }
+    const cell = v => { const t = v === undefined || v === null ? "" : String(v); return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+    const csv = "\ufeff" + [cols.join(","), ...rows.map(r => cols.map(c => cell(r[c])).join(","))].join("\r\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = h("a", { href: url, download: `${ev.sku || ev.id} scouting.csv` });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    toast(`Exported ${rows.length} rows`);
+  } catch (err) { toast(`Couldn't export: ${err.code || err.message}`, "bad"); }
+}
+
 views.more = () => [pagehead("More"),
   group(
     lrow({ href: "#/autos", ic: "autos", title: "Autos", sub: "Our autonomous routes" }),
@@ -1823,12 +2004,12 @@ views.settings = () => {
 const NAV = [["home", "Home", ""], ["events", "Events", "events"], ["teams", "Teams", "teams"], ["scout", "Scout", "scout"], ["more", "More", "more"]];
 const NAV_WIDE = [["home", "Home", ""], ["events", "Events", "events"], ["teams", "Teams", "teams"], ["scout", "Scout for me", "scout"], ["autos", "Autos", "autos"], ["checklist", "Checklist", "checklist"],
   ["scorer", "Scorer", "scorer"], ["predict", "Predictor", "predict"], ["board", "Whiteboard", "board"], ["pit", "Pit display", "pit"], ["settings", "Settings", "settings"]];
-const TAB_OF = { event: "events", match: "events", team: "teams", autos: "more", checklist: "more", scorer: "more", predict: "more", settings: "more", board: "more", pit: "more" };
-const BACK = { event: ["Events", "#/events"], match: ["Back"], team: ["Back"], checklist: ["More", "#/more"], scorer: ["More", "#/more"], predict: ["More", "#/more"], settings: ["More", "#/more"] };
+const TAB_OF = { event: "events", match: "events", select: "events", assign: "events", team: "teams", autos: "more", checklist: "more", scorer: "more", predict: "more", settings: "more", board: "more", pit: "more" };
+const BACK = { event: ["Events", "#/events"], match: ["Back"], select: ["Back"], assign: ["Back"], team: ["Back"], checklist: ["More", "#/more"], scorer: ["More", "#/more"], predict: ["More", "#/more"], settings: ["More", "#/more"] };
 const wide = matchMedia("(min-width: 900px)");
 let lastRoute = "", titleObs = null;
 // How deep each page sits, so moving deeper slides in from the right and Back slides the other way.
-const DEPTH = { home: 0, events: 0, teams: 0, autos: 0, scout: 0, more: 0, event: 1, checklist: 1, scorer: 1, predict: 1, settings: 1, board: 1, pit: 1, match: 2, team: 2 };
+const DEPTH = { home: 0, events: 0, teams: 0, autos: 0, scout: 0, more: 0, event: 1, checklist: 1, scorer: 1, predict: 1, settings: 1, board: 1, pit: 1, match: 2, team: 2, select: 2, assign: 2 };
 const calm = matchMedia("(prefers-reduced-motion: reduce)");
 let lastName = "", lastDepth = 0, drawn = false, moving = null;
 /** Runs `change` as an animated transition (View Transitions where the browser has them). */
@@ -1874,14 +2055,14 @@ function draw(parts, name, fresh) {
   document.body.classList.add("has-nav");
   const isWide = wide.matches;
   const tab = TAB_OF[name] || name;
-  const sub = name === "autos" || name === "scout" ? !!parts[1] : isWide ? ["event", "match", "team"].includes(name) : !!BACK[name];
+  const sub = name === "autos" || name === "scout" ? !!parts[1] : isWide ? ["event", "match", "team", "select", "assign"].includes(name) : !!BACK[name];
   const [backLabel, backHref] = name === "autos" ? ["Autos", "#/autos"] : name === "scout" ? ["Scout", "#/scout"] : BACK[name] || ["Back"];
   const content = views[name](...parts.slice(1));
   const head = h("header", { class: "top" },
     h("div", { class: "left" }, sub ? h("button", { class: "back", onclick: () => { if (backHref) location.hash = backHref; else if (history.length > 1) history.back(); else location.hash = "#/"; } }, icon("back"), h("span", {}, backLabel)) : null),
     h("span", { class: "title" }, ""),
     h("div", { class: "right" }, name === "autos" && areasOpen() ? seg([["red", "Red"], ["blue", "Blue"]], side, v => { side = v; store.set("alliance", v); render(); }, "red-blue") : null));
-  const current = k => isWide ? (k === name || (k === "events" && ["event", "match"].includes(name)) || (k === "teams" && name === "team")) : k === tab;
+  const current = k => isWide ? (k === name || (k === "events" && ["event", "match", "select", "assign"].includes(name)) || (k === "teams" && name === "team")) : k === tab;
   root.replaceChildren(head, h("main", {}, offlineBar(), queueBanner(), content),
     h("nav", { class: "bottom", "aria-label": "Main" }, isWide ? h("div", { class: "navbrand" }, h("b", {}, us()), h("span", {}, "Scout")) : null, (isWide ? NAV_WIDE : NAV).map(([k, label, path]) => h("a", { href: `#/${path}`, "aria-current": current(k) ? "page" : null }, icon(k), label))));
   const big = root.querySelector("main h1");

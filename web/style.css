@@ -760,3 +760,28 @@ input[type="password"]:not(:placeholder-shown) { font-size: 16px; -webkit-text-s
 .pitlist dt { color: var(--muted); font-size: 0.8125rem; font-weight: 600; padding-top: 2px; }
 .pitlist dd { margin: 0; }
 .good-t { color: var(--good); } .bad-t { color: var(--bad); }
+
+/* ---------- alliance selection */
+.bestpicks { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.bestpick { display: flex; flex-direction: column; gap: 3px; padding: 14px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line); }
+.bestpick:first-child { border-color: var(--good); box-shadow: 0 0 0 1px var(--good) inset; }
+.bestpick b { font: 700 1.75rem/1.05 var(--font-num); }
+.selrow { display: grid; grid-template-columns: minmax(0, 1fr) 58px auto; gap: 10px; align-items: center; padding: 8px 12px; }
+.selrow + .selrow { border-top: 1px solid var(--sep); }
+.selteam { display: flex; gap: 10px; align-items: center; min-width: 0; }
+.selteam .tx { display: flex; flex-direction: column; min-width: 0; }
+.selteam .tx b, .selteam .tx span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.selteam .tx span { font-size: 0.8125rem; color: var(--muted); }
+.selrow.taken { opacity: 0.5; }
+.selrow.taken .tx b { text-decoration: line-through; }
+@media (max-width: 420px) { .selrow { grid-template-columns: minmax(0, 1fr) auto; } .selrow > .tier, .selrow > span:empty { display: none; } }
+
+/* ---------- scouting assignments */
+.check { width: 22px; height: 22px; min-height: 0; accent-color: var(--accent); }
+.assignlist { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.assignteam { display: grid; grid-template-columns: 18px auto; gap: 0 8px; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--sep); }
+.assignteam .muted { grid-column: 2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.assignteam svg { width: 18px; height: 18px; color: var(--good); }
+.assignteam .dot { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--faint); justify-self: center; }
+.assignteam.done b { color: var(--muted); }
+.notice.scoutme { border-left: 4px solid var(--accent); }
