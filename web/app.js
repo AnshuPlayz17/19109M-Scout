@@ -249,7 +249,7 @@ const glance = (items, cls = "") => h("div", { class: `glance ${cls}` }, items.m
 function radarChart(series, { small = false } = {}) {
   const R = 100, n = AXES.length, pt = (i, r) => [r * Math.sin((2 * Math.PI * i) / n), -r * Math.cos((2 * Math.PI * i) / n)];
   const pad = small ? 8 : 64;
-  const svg = svgEl("svg", { viewBox: `${-R - pad} ${-R - (small ? 8 : 26)} ${2 * (R + pad)} ${2 * R + (small ? 16 : 52)}`, class: `radar${small ? " small" : ""}`, role: "img",
+  const svg = svgEl("svg", { viewBox: `${-R - pad} ${-R - (small ? 8 : 34)} ${2 * (R + pad)} ${2 * R + (small ? 16 : 86)}`, class: `radar${small ? " small" : ""}`, role: "img",
     "aria-label": AXES.map(a => `${a.label} ${series[0]?.p?.[a.key] == null ? "no data" : `${Math.round(series[0].p[a.key] * 100)}th percentile`}`).join(", ") });
   for (const f of [0.25, 0.5, 0.75, 1]) svgEl("polygon", { class: `grid${f === 1 ? " edge" : ""}`, points: AXES.map((_, i) => pt(i, f * R).join(",")).join(" ") }, svg);
   AXES.forEach((_, i) => { const [x, y] = pt(i, R); svgEl("line", { class: "spoke", x1: 0, y1: 0, x2: x, y2: y }, svg); });
