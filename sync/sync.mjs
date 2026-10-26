@@ -397,6 +397,23 @@ async function seasonNotes(teams, skip) {
   return calls;
 }
 
+/**
+ * Skills leaderboard for our region (meta/skills-<game>) for the app's skills planner: each team's
+ * best driver + best autonomous skills this season. VEX ranks skills by the best combined score
+ * from one event, so this is close but not exact.
+ */
+async function skillsBoard(teams, us) {
+  const stats = await readTeamStats(teams.map(t => t.number));
+  const rows = teams.filter(t => stats[t.number] && t.region === config.region).map(t => {
+    const st = stats[t.number];
+    return { n: t.number, name: t.name, driver: st.bestDriver || 0, prog: st.bestProg || 0, total: (st.bestDriver || 0) + (st.bestProg || 0) };
+  }).filter(r => r.total > 0).sort((a, b) => b.total - a.total || b.prog - a.prog);
+  rows.forEach((r, i) => { r.rank = i + 1; });
+  const ours = rows.find(r => r.n === us) || null;
+  await db.doc(`meta/skills-${G.key}`).set({ region: config.region, count: rows.length, top: rows.slice(0, 60), ours, updatedAt: FieldValue.serverTimestamp() });
+  console.log(`Skills board: ${rows.length} teams in ${config.region}${ours ? `, us #${ours.rank}` : ""}`);
+}
+
 // ---------- Requests from the app ----------
 
 async function handleRequests(ctx) {
@@ -603,6 +620,7 @@ async function full() {
   }
   console.log(`Season stats for ${done}/${queue.length} teams`);
   await assist.writeScales(G.key); // percentiles for the app's hexagon charts
+  await skillsBoard(allTeams.filter(t => t.region === config.region || ourEventTeams.has(t.number)), ctx.team.number);
 
   // Every one of our events, with notes for the next ones (AI only for upcoming/ongoing).
   let aiBudget = config.aiNotesPerRun;

@@ -140,6 +140,8 @@ const ICONS = {
   expand: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
   lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+  skills: '<path d="M4 20h4v-6H4zM10 20h4V9h-4zM16 20h4V4h-4z"/>',
+  review: '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 12h7M9 16h5"/>',
   scout: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>',
   chat: '<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9.5h8M8 12.5h5"/>',
   send: '<path d="M5 12h13M12 5l7 7-7 7"/>',
@@ -499,7 +501,8 @@ views.event = (id, tab) => {
   }
   const hasUs = ev.teams.some(t => t.number === us());
   tab ||= hasUs ? "ours" : "matches";
-  const tabs = [hasUs && ["ours", "Ours"], ["matches", "Matches"], ["rankings", "Rankings"], ["teams", "Teams"], ["skills", "Skills"]].filter(Boolean);
+  const hasElims = ev.matches.some(m => m.round > 2);
+  const tabs = [hasUs && ["ours", "Ours"], ["matches", "Matches"], hasElims && ["bracket", "Bracket"], ["rankings", "Rankings"], ["teams", "Teams"], ["skills", "Skills"]].filter(Boolean);
   const scored = ev.matches.filter(m => m.scored).length;
   const out = [
     h("header", { class: "pagehead" }, h("h1", {}, ev.name),
@@ -553,6 +556,8 @@ views.event = (id, tab) => {
   } else if (tab === "teams") {
     const rated = ev.teams.slice().sort((a, b) => (ev.ratings?.[b.number]?.rating ?? 0) - (ev.ratings?.[a.number]?.rating ?? 0));
     out.push(group(...rated.map(t => teamRow(t, ev))), h("p", { class: "footnote" }, "Strongest first. The bar is each team's rating at this event."));
+  } else if (tab === "bracket") {
+    out.push(...bracketView(ev));
   } else if (tab === "skills") {
     if (!ev.skills.length) out.push(notice("Skills scores show here once teams run them.", "No skills runs yet", "trophy"));
     else {
@@ -565,6 +570,7 @@ views.event = (id, tab) => {
   }
   out.push(section("More"), group(
     lrow({ href: `#/predict/${id}`, ic: "predict", title: "Win predictor", sub: "Pick any four teams here" }),
+    ev.ours ? lrow({ href: `#/review/${id}`, ic: "review", title: "Event review", sub: "How it went, and a notebook entry" }) : null,
     lrow({ href: `#/select/${id}`, ic: "trophy", title: "Alliance selection", sub: "Cross off teams as they're picked; best still available" }),
     lrow({ href: `#/assign/${id}`, ic: "teams", title: "Scouting assignments", sub: "Split the teams here between our scouts" }),
     lrow({ ic: "download", title: "Export scouting", sub: "Scouting notes, pit sheets and match notes as a spreadsheet (CSV)", onclick: () => exportScouting(ev) }),
@@ -1756,6 +1762,259 @@ function scoutReport(id) {
   return out;
 }
 
+// ---------------------------------------------------------------- elimination bracket
+// Columns by round, our alliance highlighted, and our path: the chance of winning each round
+// (against the actual opponent, or the likely one while that's still being decided) and of
+// getting that far. Assumes slots 1+2 feed the next round's slot 1, 3+4 feed slot 2, and so on,
+// until the real next match is posted.
+const ELIM_ORDER = [6, 3, 4, 5];
+const ROUND_NAME = { 6: "Round of 16", 3: "Quarterfinals", 4: "Semifinals", 5: "Finals" };
+const allianceWin = (a, b, ratings) => { const sum = ts => ts.reduce((s, t) => s + (ratings?.[t]?.rating || 0), 0); return 1 / (1 + Math.exp(-1.15 * (sum(a) - sum(b)))); };
+function bracketModel(ev) {
+  const elims = ev.matches.filter(m => m.round > 2);
+  const rounds = [...new Set(elims.map(m => m.round))].sort((a, b) => (ELIM_ORDER.indexOf(a) + 1 || 99) - (ELIM_ORDER.indexOf(b) + 1 || 99));
+  const known = ELIM_ORDER.slice(ELIM_ORDER.indexOf(rounds[0]) >= 0 ? ELIM_ORDER.indexOf(rounds[0]) : 0);
+  const order = rounds.length && ELIM_ORDER.includes(rounds[0]) ? known : rounds;
+  const slots = {};
+  for (const m of elims) (slots[`${m.round}-${m.instance}`] ||= []).push(m);
+  const key = ts => ts.slice().sort().join(" ");
+  const winner = list => { const done = list.filter(m => m.scored); const m = done[done.length - 1]; if (!m || m.red.score === m.blue.score) return null; return m.red.score > m.blue.score ? m.red.teams : m.blue.teams; };
+  const memo = {};
+  // Who comes out of a slot, and how likely: { key: { teams, p } }
+  const dist = (ri, inst) => {
+    const id = `${ri}-${inst}`;
+    if (memo[id]) return memo[id];
+    const list = slots[`${order[ri]}-${inst}`];
+    let out = {};
+    if (list?.length) {
+      const m = list[list.length - 1], w = winner(list);
+      if (w) out[key(w)] = { teams: w, p: 1 };
+      else { const p = allianceWin(m.red.teams, m.blue.teams, ev.ratings); out[key(m.red.teams)] = { teams: m.red.teams, p }; out[key(m.blue.teams)] = { teams: m.blue.teams, p: 1 - p }; }
+    } else if (ri > 0) {
+      const A = dist(ri - 1, 2 * inst - 1), B = dist(ri - 1, 2 * inst);
+      for (const a of Object.values(A)) for (const b of Object.values(B)) {
+        const pa = allianceWin(a.teams, b.teams, ev.ratings);
+        (out[key(a.teams)] ||= { teams: a.teams, p: 0 }).p += a.p * b.p * pa;
+        (out[key(b.teams)] ||= { teams: b.teams, p: 0 }).p += a.p * b.p * (1 - pa);
+      }
+      if (!Object.keys(A).length) out = B; else if (!Object.keys(B).length) out = A;
+    }
+    return (memo[id] = out);
+  };
+  return { elims, order, slots, dist, key, winner };
+}
+function bracketView(ev) {
+  const B = bracketModel(ev), out = [];
+  const isUs = ts => ts.includes(us());
+  const ourFirst = B.elims.find(m => isUs(m.red.teams) || isUs(m.blue.teams));
+  if (ourFirst) {
+    const ours = isUs(ourFirst.red.teams) ? ourFirst.red.teams : ourFirst.blue.teams, k = B.key(ours);
+    const first = B.order.indexOf(ourFirst.round);
+    let ri = first, inst = ourFirst.instance, prev = 1, lastInst = inst;
+    const rows = [];
+    for (; ri < B.order.length; ri++, lastInst = inst, inst = Math.ceil(inst / 2)) {
+      const d = B.dist(ri, inst), mine = d[k]?.p ?? 0;
+      const list = B.slots[`${B.order[ri]}-${inst}`];
+      const real = list?.[list.length - 1];
+      let opp;
+      if (real && (isUs(real.red.teams) || isUs(real.blue.teams))) opp = isUs(real.red.teams) ? real.blue.teams : real.red.teams;
+      else {
+        // Whoever comes out of the other half: the slot next to the one we came from.
+        const sib = ri > first ? B.dist(ri - 1, lastInst % 2 ? lastInst + 1 : lastInst - 1) : {};
+        opp = Object.values(sib).sort((a, b) => b.p - a.p)[0]?.teams;
+      }
+      const done = real && real.scored && (isUs(real.red.teams) || isUs(real.blue.teams));
+      const lost = done && !(B.winner(list) || []).includes(us());
+      rows.push(lrow({ info: true, title: ROUND_NAME[B.order[ri]] || `Round ${B.order[ri]}`,
+        sub: opp ? `${real && (isUs(real.red.teams) || isUs(real.blue.teams)) ? "vs" : "likely vs"} ${opp.join(", ")}` : "Opponent not known yet",
+        trail: done ? h("span", { class: `pill ${lost ? "loss" : "win"}` }, lost ? "Lost" : "Won") : h("span", { class: "tr strong" }, prev > 0 ? `${pct(mine / prev)}` : "–") }));
+      if (lost) break;
+      prev = mine;
+      if (!mine) break;
+    }
+    const champ = B.dist(B.order.length - 1, 1)[k]?.p;
+    out.push(section("Our path"), group(...rows),
+      h("p", { class: "footnote" }, `Chance to win each round from the ratings${champ !== undefined ? `; to win it all: ${champ < 0.01 ? "under 1%" : pct(champ)}` : ""}. Later opponents are the likeliest winners of the other side of the bracket.`));
+  } else out.push(notice("We're not in the eliminations here.", "Not in the bracket", "trophy"));
+  // The bracket itself, a column per round.
+  const cols = B.order.map((r, ri) => {
+    const expect = Math.max(1, 2 ** (B.order.length - 1 - ri));
+    const cards = [];
+    for (let inst = 1; inst <= expect; inst++) {
+      const list = B.slots[`${r}-${inst}`];
+      if (!list) { cards.push(h("div", { class: "bslot tbd" }, h("span", { class: "muted small" }, "To be decided"))); continue; }
+      const m = list[list.length - 1], w = B.winner(list), p = ev.predictions?.[m.id];
+      const side = c => h("div", { class: `bside ${c}${w && w === m[c].teams ? " won" : ""}${isUs(m[c].teams) ? " us" : ""}` },
+        h("span", { class: "teams" }, m[c].teams.map(tn)), h("b", {}, m.scored ? m[c].score : p !== undefined ? pct(c === "red" ? p : 1 - p) : ""));
+      cards.push(h("a", { class: "bslot", href: `#/match/${ev.id}/${m.id}` }, h("span", { class: "bname" }, shortName(m.name)), side("red"), side("blue")));
+    }
+    return h("div", { class: "bcol" }, h("span", { class: "eyebrow" }, ROUND_NAME[r] || `Round ${r}`), h("div", { class: "bslots" }, cards));
+  });
+  out.push(section("Bracket"), h("div", { class: "bracket" }, cols));
+  return out;
+}
+
+// ---------------------------------------------------------------- skills planner
+// Our skills runs (official ones from VEX Events, plus practice runs we log), against our region's
+// leaderboard (meta/skills-<game>, from the nightly sync) and a target rank we pick.
+const watchSkillsBoard = () => watch("skillsBoard", doc(db, "meta", `skills-${G.key}`), s => { S.skillsBoard = s.exists() ? s.data() : null; });
+const watchSkillsRuns = () => watch("skillsRuns", query(collection(db, "skillsRuns"), where("game", "==", G.key)), s => {
+  S.skillsRuns = s.docs.map(d => ({ id: d.id, pending: d.metadata.hasPendingWrites, ...d.data() })).sort((a, b) => a.date.localeCompare(b.date));
+}, { includeMetadataChanges: true });
+const skDraft = { kind: "driver", score: "", date: new Date().toLocaleDateString("en-CA"), notes: "" };
+views.skills = () => {
+  watchSkillsBoard(); watchSkillsRuns();
+  const board = S.skillsBoard, runs = S.skillsRuns || [];
+  const official = ourEvents().map(e => ({ e, s: S.events[e.id]?.skills?.find(x => x.team === us()) })).filter(x => x.s);
+  const target = store.get("skillsTarget", 10);
+  const at = board?.top?.[Math.min(target, board.top.length) - 1];
+  const near = board?.top?.slice(Math.max(0, target - 3), target + 2) || [];
+  const avg = k => near.length ? Math.round(near.reduce((s, r) => s + r[k], 0) / near.length) : 0;
+  const best = k => Math.max(0, ...official.map(x => x.s[k === "prog" ? "prog" : "driver"]), ...runs.filter(r => r.kind === k).map(r => r.score));
+  const bestOfficial = board?.ours;
+  const out = [pagehead("Skills planner", `${G.name} · ${board?.region || "our region"}`)];
+  out.push(glance([[bestOfficial ? `#${bestOfficial.rank}` : "–", `In ${board?.region || "region"}`, "accent"], [bestOfficial ? bestOfficial.total : "–", "Best official"],
+    [best("driver") || "–", "Best driver"], [best("prog") || "–", "Best auto"]]));
+  // Target
+  out.push(section("Target"), card(
+    h("div", { class: "row between" }, h("span", {}, `Top ${target} in ${board?.region || "the region"}`),
+      h("div", { class: "stepper" }, h("button", { type: "button", "aria-label": "Lower target", onclick: () => { store.set("skillsTarget", Math.max(1, target - 1)); render(); } }, "−"), h("output", {}, target),
+        h("button", { type: "button", "aria-label": "Higher target", onclick: () => { store.set("skillsTarget", Math.min(60, target + 1)); render(); } }, "+"))),
+    at ? h("p", {}, `#${target} right now is `, h("b", {}, `${at.n} with ${at.total}`), ` (${at.driver} driver + ${at.prog} auto). Teams around there average ${avg("driver")} driver and ${avg("prog")} auto.`)
+      : h("p", { class: "muted" }, board === undefined ? "Loading…" : "The leaderboard fills in after the next nightly refresh."),
+    at ? (() => {
+      const gapD = Math.max(0, avg("driver") - best("driver")), gapP = Math.max(0, avg("prog") - best("prog")), total = best("driver") + best("prog");
+      return h("div", { class: "kv" },
+        h("div", {}, h("span", {}, "Need overall"), h("b", {}, total >= at.total ? "✓" : `+${at.total - total + 1}`), h("span", {}, `our best ${total} vs ${at.total}`)),
+        h("div", {}, h("span", {}, "Driver"), h("b", {}, gapD ? `+${gapD}` : "✓"), h("span", {}, `best ${best("driver")} vs ~${avg("driver")}`)),
+        h("div", {}, h("span", {}, "Autonomous"), h("b", {}, gapP ? `+${gapP}` : "✓"), h("span", {}, `best ${best("prog")} vs ~${avg("prog")}`)));
+    })() : null,
+    h("p", { class: "muted small" }, "Set the target to how many skills spots qualify from our region this season (check the qualification criteria). Our bests include practice runs; the region uses each team's best official scores.")));
+  // Chart of runs
+  const pts = [...official.map(x => ({ date: x.e.start.slice(0, 10), driver: x.s.driver, prog: x.s.prog, official: true, label: x.e.name })),
+    ...runs.map(r => ({ date: r.date, [r.kind]: r.score, official: false }))].sort((a, b) => a.date.localeCompare(b.date));
+  if (pts.length) out.push(section("Our runs"), card(skillsChart(pts, at ? { driver: avg("driver"), prog: avg("prog") } : null)));
+  // Log a practice run
+  const msg = h("p", { class: "error", role: "status" });
+  out.push(section("Log a run"), h("form", { class: "card", onsubmit: e => {
+    e.preventDefault();
+    const score = parseInt(skDraft.score, 10);
+    if (!(score >= 0 && score <= 999)) { msg.textContent = "Enter the score."; return; }
+    setDoc(doc(collection(db, "skillsRuns")), { kind: skDraft.kind, score, date: skDraft.date.slice(0, 10), notes: skDraft.notes.trim().slice(0, 200), game: G.key, by: user.uid, nickname: S.nickname, at: serverTimestamp() })
+      .catch(err => toast(`Couldn't save the run (${err.code || err.message}).`, "bad"));
+    toast("Run saved"); skDraft.score = ""; skDraft.notes = ""; render();
+  } },
+    seg([["driver", "Driver"], ["prog", "Autonomous"]], skDraft.kind, v => { skDraft.kind = v; render(); }),
+    h("div", { class: "grid2" }, h("label", { class: "field" }, "Score", h("input", { type: "number", inputmode: "numeric", min: 0, max: 999, value: skDraft.score, oninput: e => { skDraft.score = e.target.value; } })),
+      h("label", { class: "field" }, "Date", h("input", { type: "date", value: skDraft.date, oninput: e => { skDraft.date = e.target.value; } }))),
+    h("label", { class: "field" }, "Notes", h("input", { maxlength: 200, placeholder: "Practice, new route, what went wrong", value: skDraft.notes, oninput: e => { skDraft.notes = e.target.value; } })),
+    msg, h("button", { class: "btn primary wide", type: "submit" }, "Save run")));
+  if (runs.length) out.push(group(...runs.slice().reverse().slice(0, 30).map(r => lrow({ info: true, title: `${r.kind === "driver" ? "Driver" : "Autonomous"} ${r.score}`,
+    sub: [r.date, r.nickname, r.notes, r.pending ? "waiting to send" : ""].filter(Boolean).join(" · "),
+    trail: r.by === user.uid ? h("button", { type: "button", class: "btn small danger", onclick: () => { if (confirm("Delete this run?")) deleteDoc(doc(db, "skillsRuns", r.id)); } }, "Delete") : "" }))));
+  // Leaderboard
+  if (board?.top?.length) out.push(section(`${board.region} leaderboard`), h("div", { class: "group-list tablewrap" }, h("table", {},
+    h("thead", {}, h("tr", {}, h("th", { class: "num" }, "#"), h("th", {}, "Team"), h("th", { class: "num" }, "Driver"), h("th", { class: "num" }, "Auto"), h("th", { class: "num" }, "Total"))),
+    h("tbody", {}, [...board.top.slice(0, 25), ...(board.ours && board.ours.rank > 25 ? [board.ours] : [])].map(r => h("tr", { class: `${r.n === us() ? "us" : ""}${r.rank === target ? " target" : ""}` },
+      h("td", { class: "num" }, r.rank), h("td", {}, h("a", { href: teamHref(r.n) }, tn(r.n))), h("td", { class: "num" }, r.driver), h("td", { class: "num" }, r.prog), h("td", { class: "num" }, r.total)))))),
+    h("p", { class: "footnote" }, `Best driver plus best autonomous for each team this season, from ${board.count} teams; VEX ranks the best combined run from one event, so it can differ a little. Updated ${ago(board.updatedAt)}.`));
+  return out;
+};
+/** Driver and autonomous scores over time; official runs are big dots, dashed lines are the target. */
+function skillsChart(pts, target) {
+  const W = 320, H = 150, pad = 26;
+  const max = Math.max(10, ...pts.map(p => Math.max(p.driver || 0, p.prog || 0)), target?.driver || 0, target?.prog || 0) * 1.1;
+  const t0 = Date.parse(pts[0].date), t1 = Math.max(t0 + 86400e3, Date.parse(pts[pts.length - 1].date));
+  const x = d => pad + ((Date.parse(d) - t0) / (t1 - t0)) * (W - pad - 8), y = v => H - 18 - (v / max) * (H - 30);
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, class: "skchart", role: "img", "aria-label": "Skills scores over time" });
+  for (const f of [0, 0.5, 1]) { svgEl("line", { x1: pad, x2: W - 6, y1: y(f * max / 1.1), y2: y(f * max / 1.1), class: "grid" }, svg); const t = svgEl("text", { x: pad - 4, y: y(f * max / 1.1) + 3, "text-anchor": "end", class: "lab" }, svg); t.textContent = Math.round(f * max / 1.1); }
+  for (const k of ["driver", "prog"]) {
+    if (target) svgEl("line", { x1: pad, x2: W - 6, y1: y(target[k]), y2: y(target[k]), class: `tgt ${k}` }, svg);
+    const ps = pts.filter(p => p[k] !== undefined);
+    if (ps.length > 1) svgEl("polyline", { points: ps.map(p => `${x(p.date)},${y(p[k])}`).join(" "), class: `ln ${k}` }, svg);
+    ps.forEach(p => svgEl("circle", { cx: x(p.date), cy: y(p[k]), r: p.official ? 4.5 : 2.8, class: `pt ${k}${p.official ? " off" : ""}` }, svg));
+  }
+  const d0 = svgEl("text", { x: pad, y: H - 4, class: "lab" }, svg); d0.textContent = fmtDay(pts[0].date);
+  const d1 = svgEl("text", { x: W - 6, y: H - 4, "text-anchor": "end", class: "lab" }, svg); d1.textContent = fmtDay(pts[pts.length - 1].date);
+  return h("div", { class: "trendbox", style: "border:0;padding:0" }, svg, h("div", { class: "legend" }, h("span", {}, h("i", { class: "lg-drv" }), "Driver"), h("span", {}, h("i", { class: "lg-prg" }), "Autonomous"),
+    h("span", {}, "big dots: official"), target ? h("span", {}, "dashed: target") : null));
+}
+
+// ---------------------------------------------------------------- season and event review
+// Our results event by event, what changed between events, our match notes, and an AI-written
+// engineering notebook entry (sync/assist.mjs review()) with a copy button.
+const watchReview = key => watch(`rev${key}`, doc(db, "reviews", `${G.key}-${key}`), s => { S.reviews ||= {}; S.reviews[key] = s.exists() ? s.data({ serverTimestamps: "estimate" }) : null; });
+const reviewWait = {};
+async function makeReview(key) {
+  if (!navigator.onLine) { toast("You're offline. Try again when you're connected.", "bad"); return; }
+  reviewWait[key] = "Asking Scout…"; render();
+  try {
+    const ref = await addDoc(collection(db, "aiJobs"), { kind: "review", event: String(key), by: user.uid, nickname: S.nickname, at: serverTimestamp(), game: G.key, status: "new" });
+    const un = onSnapshot(ref, snap => {
+      const j = snap.data(); if (!j) return;
+      if (j.step) reviewWait[key] = j.step;
+      if (j.status === "done" || j.status === "error") { un(); delete reviewWait[key]; if (j.status === "error") toast(j.error || "Couldn't write the review.", "bad"); deleteDoc(ref).catch(() => {}); }
+      refresh();
+    });
+  } catch (err) { delete reviewWait[key]; toast(`Couldn't ask: ${err.code || err.message}`, "bad"); render(); }
+}
+function eventSummary(e, ev) {
+  const r = ev?.rankings?.find(x => x.team === us()), o = ev?.oprs?.[us()], sk = ev?.skills?.find(x => x.team === us());
+  const ours = (ev?.ourMatches || []).map(om => ({ om, m: ev.matches.find(x => x.id === om.id) })).filter(x => x.m?.scored);
+  const pts = ours.map(({ om, m }) => m[om.color].score);
+  const wins = ours.filter(({ om, m }) => m[om.color].score > m[om.color === "red" ? "blue" : "red"].score).length;
+  return { e, ev, r, opr: o?.matches >= 3 ? Math.round(o.opr) : null, skills: sk?.total ?? null, avg: pts.length ? Math.round(pts.reduce((a, b) => a + b, 0) / pts.length) : null,
+    played: ours.length, wins, size: ev?.teams?.length };
+}
+views.review = id => {
+  const key = id || "season";
+  watchReview(key);
+  const evs = (id ? ourEvents().filter(e => String(e.id) === String(id)) : ourEvents().filter(e => ms(e.start) <= Date.now()));
+  if (id && !evs.length) { watchEvent(id); const ev = S.events[id]; if (ev) evs.push(ev); }
+  const sums = evs.map(e => eventSummary(e, S.events[e.id]));
+  const out = [pagehead(id ? `Review · ${evs[0]?.name || "Event"}` : "Season review", id ? fmtDates(evs[0] || {}) : `${G.name} ${G.years} · ${sums.length} event${sums.length === 1 ? "" : "s"} played`)];
+  if (!sums.length) return [...out, notice("Reviews show up once we've played an event.", "Nothing played yet", "trophy")];
+  // Table of events
+  out.push(h("div", { class: "group-list tablewrap" }, h("table", {},
+    h("thead", {}, h("tr", {}, h("th", {}, "Event"), h("th", { class: "num" }, "Rank"), h("th", { class: "num" }, "W-L"), h("th", { class: "num" }, "Avg pts"), h("th", { class: "num" }, "OPR"), h("th", { class: "num" }, "Skills"))),
+    h("tbody", {}, sums.map(x => h("tr", {}, h("td", {}, h("a", { href: `#/review/${x.e.id}` }, x.e.name)), h("td", { class: "num" }, x.r ? `${x.r.rank}/${x.size}` : "–"),
+      h("td", { class: "num" }, x.played ? `${x.wins}-${x.played - x.wins}` : "–"), h("td", { class: "num" }, x.avg ?? "–"), h("td", { class: "num" }, x.opr ?? "–"), h("td", { class: "num" }, x.skills ?? "–")))))));
+  // What changed between the last two events
+  if (sums.length >= 2) {
+    const [a, b] = sums.slice(-2);
+    const d = (k, better = 1) => a[k] == null || b[k] == null ? null : { v: b[k] - a[k], good: (b[k] - a[k]) * better > 0 };
+    const rows = [["Rank", a.r && b.r ? { v: b.r.rank - a.r.rank, good: b.r.rank < a.r.rank } : null, true], ["Avg points", d("avg")], ["OPR", d("opr")], ["Skills", d("skills")],
+      ["Win rate", a.played && b.played ? { v: Math.round((b.wins / b.played - a.wins / a.played) * 100), good: b.wins / b.played > a.wins / a.played, pct: true } : null]].filter(r => r[1]);
+    if (rows.length) out.push(section(`Since ${a.e.name}`), group(...rows.map(([k, x, rank]) => lrow({ info: true, title: k,
+      trail: h("span", { class: `tr strong ${x.v === 0 ? "" : x.good ? "good-t" : "bad-t"}` }, `${x.v > 0 ? "+" : ""}${x.v}${x.pct ? " pts" : ""}${rank ? (x.good ? " (better)" : x.v ? " (worse)" : "") : ""}`) }))));
+  }
+  // Our match notes for these events
+  for (const x of sums) watch(`mnev${x.e.id}`, query(collection(db, "matchNotes"), where("event", "==", String(x.e.id))), s => { S.mnEvent ||= {}; S.mnEvent[x.e.id] = s.docs.map(d => d.data()).filter(n => n.game === G.key); });
+  const notes = sums.flatMap(x => (S.mnEvent?.[x.e.id] || []).map(n => ({ ...n, ev: x.e.name })));
+  if (notes.length) {
+    out.push(section("Our match notes"));
+    if (!areasOpen()) out.push(areaGate("Match notes", `${notes.length} notes from our matches.`, { focus: false }));
+    else out.push(group(...notes.map(n => h("div", { class: "note" }, h("div", { class: "meta" }, h("b", {}, `${shortName(n.name)} · ${n.ev}`), h("span", { class: "muted small" }, n.nickname)),
+      n.good ? h("p", {}, h("b", { class: "good-t" }, "Went well: "), n.good) : null, n.bad ? h("p", {}, h("b", { class: "bad-t" }, "Went wrong: "), n.bad) : null, n.next ? h("p", {}, h("b", {}, "Next time: "), n.next) : null))));
+  }
+  // AI notebook entry
+  const rv = S.reviews?.[key], busy = reviewWait[key];
+  const btn = h("button", { type: "button", class: `btn${rv ? "" : " primary"}`, disabled: !!busy || !aiReady(), onclick: () => makeReview(key) }, icon("scout"), busy || (rv ? "Write it again" : "Write a notebook entry"));
+  out.push(section("Engineering notebook"));
+  if (!rv) out.push(card(h("p", { class: "muted small" }, aiReady() ? "Scout writes an entry from our results, the changes between events and our match notes: highlights, what worked, what didn't, next steps." : "Needs AI: an admin adds the ANTHROPIC_API_KEY secret."), btn));
+  else {
+    const list = (title, xs) => xs?.length ? h("div", {}, h("span", { class: "eyebrow" }, title), h("ul", {}, xs.map(t => h("li", {}, t)))) : null;
+    const text = [rv.title, "", rv.notebook, "", ...[["Highlights", rv.highlights], ["What worked", rv.worked], ["What didn't", rv.didnt], ["What changed", rv.changed], ["Next steps", rv.next]]
+      .filter(([, xs]) => xs?.length).flatMap(([t, xs]) => [t, ...xs.map(x => `- ${x}`), ""])].join("\n");
+    out.push(card(h("h3", {}, rv.title), h("p", {}, rv.summary),
+      h("div", { class: "bullets" }, list("Highlights", rv.highlights), list("What worked", rv.worked), list("What didn't", rv.didnt), list("What changed", rv.changed), list("Next steps", rv.next)),
+      h("div", { class: "notepara" }, h("span", { class: "eyebrow" }, "Notebook entry"), h("p", { class: "nbtext" }, rv.notebook)),
+      h("p", { class: "muted small" }, `By ${rv.by || "Scout"} · ${ago(rv.at)} · AI, check it before it goes in the notebook`),
+      h("div", { class: "row" }, h("button", { type: "button", class: "btn primary", onclick: () => navigator.clipboard?.writeText(text).then(() => toast("Copied. Paste it into the notebook."), () => toast("Couldn't copy on this device.", "bad")) }, "Copy for notebook"), btn)));
+  }
+  return out;
+};
+
 // ---------------------------------------------------------------- game plan for one of our matches
 // The sync writes it with AI (sync/assist.mjs plan()) from the four teams' stats, notes and our scouting.
 const planWait = {};
@@ -1936,6 +2195,8 @@ views.more = () => [pagehead("More"),
   group(
     lrow({ href: "#/autos", ic: "autos", title: "Autos", sub: "Our autonomous routes" }),
     lrow({ ic: "chat", title: "Ask Scout", sub: "AI chat about teams, events and picks", onclick: () => openChat() }),
+    lrow({ href: "#/skills", ic: "skills", title: "Skills planner", sub: "Our runs vs the region and a target" }),
+    lrow({ href: "#/review", ic: "review", title: "Season review", sub: "Results, what changed, notebook entries" }),
     lrow({ href: "#/checklist", ic: "checklist", title: "Checklist", sub: "Before each match, packing list, your own" }),
     lrow({ href: "#/scorer", ic: "scorer", title: "Scorer", sub: "Match timer and score counter" }),
     lrow({ href: "#/predict", ic: "predict", title: "Predictor", sub: "Win chance for any four teams" }),
@@ -2002,14 +2263,14 @@ views.settings = () => {
 
 // Five tabs on phones; the sidebar on wide screens lists everything.
 const NAV = [["home", "Home", ""], ["events", "Events", "events"], ["teams", "Teams", "teams"], ["scout", "Scout", "scout"], ["more", "More", "more"]];
-const NAV_WIDE = [["home", "Home", ""], ["events", "Events", "events"], ["teams", "Teams", "teams"], ["scout", "Scout for me", "scout"], ["autos", "Autos", "autos"], ["checklist", "Checklist", "checklist"],
+const NAV_WIDE = [["home", "Home", ""], ["events", "Events", "events"], ["teams", "Teams", "teams"], ["scout", "Scout for me", "scout"], ["autos", "Autos", "autos"], ["skills", "Skills planner", "skills"], ["review", "Season review", "review"], ["checklist", "Checklist", "checklist"],
   ["scorer", "Scorer", "scorer"], ["predict", "Predictor", "predict"], ["board", "Whiteboard", "board"], ["pit", "Pit display", "pit"], ["settings", "Settings", "settings"]];
-const TAB_OF = { event: "events", match: "events", select: "events", assign: "events", team: "teams", autos: "more", checklist: "more", scorer: "more", predict: "more", settings: "more", board: "more", pit: "more" };
-const BACK = { event: ["Events", "#/events"], match: ["Back"], select: ["Back"], assign: ["Back"], team: ["Back"], checklist: ["More", "#/more"], scorer: ["More", "#/more"], predict: ["More", "#/more"], settings: ["More", "#/more"] };
+const TAB_OF = { skills: "more", review: "more", event: "events", match: "events", select: "events", assign: "events", team: "teams", autos: "more", checklist: "more", scorer: "more", predict: "more", settings: "more", board: "more", pit: "more" };
+const BACK = { skills: ["More", "#/more"], review: ["Back"], event: ["Events", "#/events"], match: ["Back"], select: ["Back"], assign: ["Back"], team: ["Back"], checklist: ["More", "#/more"], scorer: ["More", "#/more"], predict: ["More", "#/more"], settings: ["More", "#/more"] };
 const wide = matchMedia("(min-width: 900px)");
 let lastRoute = "", titleObs = null;
 // How deep each page sits, so moving deeper slides in from the right and Back slides the other way.
-const DEPTH = { home: 0, events: 0, teams: 0, autos: 0, scout: 0, more: 0, event: 1, checklist: 1, scorer: 1, predict: 1, settings: 1, board: 1, pit: 1, match: 2, team: 2, select: 2, assign: 2 };
+const DEPTH = { home: 0, events: 0, teams: 0, autos: 0, scout: 0, more: 0, event: 1, checklist: 1, scorer: 1, predict: 1, settings: 1, board: 1, pit: 1, match: 2, team: 2, select: 2, assign: 2, skills: 1, review: 1 };
 const calm = matchMedia("(prefers-reduced-motion: reduce)");
 let lastName = "", lastDepth = 0, drawn = false, moving = null;
 /** Runs `change` as an animated transition (View Transitions where the browser has them). */

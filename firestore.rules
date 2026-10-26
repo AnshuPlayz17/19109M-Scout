@@ -116,6 +116,7 @@ service cloud.firestore {
         && goodNickname(request.resource.data.nickname)
         && ((request.resource.data.kind == 'chat' && request.resource.data.messages is list && request.resource.data.messages.size() <= 12)
           || (request.resource.data.kind == 'report' && request.resource.data.event is string && request.resource.data.event.size() <= 12)
+          || (request.resource.data.kind == 'review' && request.resource.data.event is string && request.resource.data.event.size() <= 12)
           || (request.resource.data.kind == 'plan' && request.resource.data.event is string && request.resource.data.event.size() <= 12
             && request.resource.data.match is string && request.resource.data.match.size() <= 20));
       allow read, delete: if isMember() && resource.data.by == request.auth.uid;
@@ -123,6 +124,21 @@ service cloud.firestore {
     // Scout for me reports and match game plans (written by the sync), shared with the whole team.
     match /reports/{d} { allow read: if isMember(); }
     match /plans/{d} { allow read: if isMember(); }
+    match /reviews/{d} { allow read: if isMember(); }
+
+    // Skills runs we log ourselves (practice, or ones not on VEX Events yet), for the skills planner.
+    match /skillsRuns/{id} {
+      allow read: if isMember();
+      allow create: if isMember()
+        && request.resource.data.keys().hasOnly(['kind', 'score', 'date', 'notes', 'game', 'by', 'nickname', 'at'])
+        && request.resource.data.kind in ['driver', 'prog']
+        && request.resource.data.score is int && request.resource.data.score >= 0 && request.resource.data.score <= 999
+        && request.resource.data.date is string && request.resource.data.date.size() <= 10
+        && request.resource.data.notes is string && request.resource.data.notes.size() <= 200
+        && request.resource.data.game in ['override', 'pushback']
+        && request.resource.data.by == request.auth.uid && goodNickname(request.resource.data.nickname);
+      allow delete: if isMember() && resource.data.by == request.auth.uid;
+    }
 
     // Alliance selection: which teams are already taken, live for everyone ("override-5002").
     match /selection/{id} {

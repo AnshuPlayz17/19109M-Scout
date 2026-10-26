@@ -785,3 +785,31 @@ input[type="password"]:not(:placeholder-shown) { font-size: 16px; -webkit-text-s
 .assignteam .dot { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--faint); justify-self: center; }
 .assignteam.done b { color: var(--muted); }
 .notice.scoutme { border-left: 4px solid var(--accent); }
+
+/* ---------- elimination bracket */
+.bracket { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(170px, 1fr); gap: 12px; overflow-x: auto; padding-bottom: 6px; scrollbar-width: thin; }
+.bcol { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.bslots { flex: 1; display: flex; flex-direction: column; justify-content: space-around; gap: 10px; }
+.bslot { display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.bslot.tbd { padding: 14px 12px; border-style: dashed; background: none; align-items: center; }
+.bname { font: 600 0.6875rem var(--font-num); color: var(--muted); padding: 4px 10px 2px; letter-spacing: 0.04em; text-transform: uppercase; }
+.bside { display: flex; justify-content: space-between; gap: 8px; padding: 5px 10px; border-left: 3px solid transparent; font-size: 0.875rem; }
+.bside.red { border-left-color: var(--red); } .bside.blue { border-left-color: var(--blue); }
+.bside .teams { display: flex; gap: 6px; flex-wrap: wrap; }
+.bside b { font-family: var(--font-num); }
+.bside.won b, .bside.won .teams { font-weight: 700; }
+.bside.us { background: var(--accent-soft); }
+.good-t.tr, .bad-t.tr { font-weight: 700; }
+
+/* ---------- skills planner */
+.skchart { width: 100%; height: auto; font-family: var(--font-num); }
+.skchart .grid { stroke: var(--line); }
+.skchart .lab { font-size: 9px; fill: var(--muted); }
+.skchart .ln { fill: none; stroke-width: 2; stroke-linejoin: round; }
+.skchart .ln.driver, .skchart .tgt.driver { stroke: var(--accent); } .skchart .ln.prog, .skchart .tgt.prog { stroke: var(--blue); }
+.skchart .tgt { stroke-width: 1.2; stroke-dasharray: 4 4; opacity: 0.7; }
+.skchart .pt.driver { fill: var(--accent); } .skchart .pt.prog { fill: var(--blue); }
+.skchart .pt.off { stroke: var(--surface); stroke-width: 1.5; }
+.legend .lg-drv { background: var(--accent); } .legend .lg-prg { background: var(--blue); }
+tr.target td { box-shadow: inset 0 -2px 0 var(--good); }
+.nbtext { white-space: pre-wrap; }
