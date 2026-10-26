@@ -8,29 +8,38 @@
 // Reports go to reports/{game}-{eventId} so every member can open them.
 import { AXES, rawAxes, buildScales, profile, pickScore } from "../web/profile.js";
 
-const MODEL = "claude-opus-5-5";
-// USD per million tokens for claude-opus-5-5 (cache writes are 1.25x input).
-const PRICE = { input: 4, output: 20, cacheWrite: 5, cacheRead: 0.2 };
+// Haiku: the low-cost model, so the team's $50 a month goes a long way.
+export const MODEL = "claude-haiku-5-5";
+// USD per million tokens for claude-haiku-5-5 (prompts under 100K tokens, which ours always are).
+// Cache writes cost 1.25x input and cache reads 0.1x.
+const PRICE = { input: 0.1, output: 0.5, cacheWrite: 0.125, cacheRead: 0.01 };
 const SEASON_NAMES = { override: "Override (2026-27, this season)", pushback: "Push Back (2025-26, last season)" };
 
 export function createAssist({ db, FieldValue, config, GAMES, ai, syncTeamStats, readTeamStats, get, all, compactTeam, chunk, ourTeam }) {
   const sleep = ms => new Promise(r => setTimeout(r, ms));
 
   // ---------------------------------------------------------------- spending
-  // One ledger per day (Toronto time) in meta/ai, readable by members so the app can show it.
+  // A ledger in meta/ai (Toronto time), readable by members so the app can show it: this month's
+  // total against the hard monthly cap, and today's, so one busy day can't use the whole month.
   const today = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Toronto" });
   let ledger = null;
   async function loadLedger() {
     if (ledger?.day === today()) return ledger;
-    const d = (await db.doc("meta/ai").get()).data();
-    ledger = d?.day === today() ? { usd: d.usd || 0, calls: d.calls || 0, people: d.people || {}, notes: d.notes || 0, day: d.day } : { usd: 0, calls: 0, people: {}, notes: 0, day: today() };
+    const d = (await db.doc("meta/ai").get()).data() || {};
+    const day = today(), month = day.slice(0, 7);
+    const sameMonth = (ledger?.month || d.month) === month;
+    const monthUsd = sameMonth ? Math.max(ledger?.monthUsd || 0, d.monthUsd || 0) : 0;
+    ledger = d.day === day ? { usd: d.usd || 0, calls: d.calls || 0, people: d.people || {}, notes: d.notes || 0, day, month, monthUsd }
+      : { usd: 0, calls: 0, people: {}, notes: 0, day, month, monthUsd };
     return ledger;
   }
   const cost = u => ((u.input_tokens || 0) * PRICE.input + (u.output_tokens || 0) * PRICE.output
     + (u.cache_creation_input_tokens || 0) * PRICE.cacheWrite + (u.cache_read_input_tokens || 0) * PRICE.cacheRead) / 1e6;
+  const caps = () => ({ monthCap: config.aiMonthlyUsd, cap: config.aiDailyUsd, perPerson: config.aiPerPersonUsd, notesCap: config.aiNotesUsd, model: MODEL });
   /** Why this person (or the nightly notes, uid "notes") can't spend right now, or "" if they can. */
   async function blocked(uid) {
     const l = await loadLedger();
+    if (l.monthUsd >= config.aiMonthlyUsd) return `The team's AI budget for this month ($${config.aiMonthlyUsd}) is used up. It resets on the 1st.`;
     if (l.usd >= config.aiDailyUsd) return `The team's AI budget for today ($${config.aiDailyUsd}) is used up. It resets at midnight.`;
     if (uid === "notes") return l.notes >= config.aiNotesUsd ? "notes budget used" : "";
     if ((l.people[uid] || 0) >= config.aiPerPersonUsd) return `You've used your share of today's AI budget ($${config.aiPerPersonUsd} each). It resets at midnight.`;
@@ -38,16 +47,16 @@ export function createAssist({ db, FieldValue, config, GAMES, ai, syncTeamStats,
   }
   async function charge(usage, uid) {
     const l = await loadLedger(), usd = cost(usage);
-    l.usd += usd; l.calls++;
+    l.usd += usd; l.monthUsd += usd; l.calls++;
     if (uid === "notes") l.notes += usd; else l.people[uid] = (l.people[uid] || 0) + usd;
-    await db.doc("meta/ai").set({ day: l.day, usd: l.usd, calls: l.calls, notes: l.notes, people: l.people, cap: config.aiDailyUsd, perPerson: config.aiPerPersonUsd, enabled: true,
+    await db.doc("meta/ai").set({ day: l.day, usd: l.usd, month: l.month, monthUsd: l.monthUsd, calls: l.calls, notes: l.notes, people: l.people, ...caps(), enabled: true,
       updatedAt: FieldValue.serverTimestamp() });
     return usd;
   }
   async function status() {
     const on = !!(await ai());
     const l = await loadLedger();
-    await db.doc("meta/ai").set({ enabled: on, cap: config.aiDailyUsd, perPerson: config.aiPerPersonUsd, day: l.day, usd: l.usd, people: l.people, notes: l.notes, calls: l.calls }, { merge: true });
+    await db.doc("meta/ai").set({ enabled: on, ...caps(), day: l.day, usd: l.usd, month: l.month, monthUsd: l.monthUsd, people: l.people, notes: l.notes, calls: l.calls }, { merge: true });
     return on;
   }
 
@@ -57,7 +66,8 @@ export function createAssist({ db, FieldValue, config, GAMES, ai, syncTeamStats,
     if (!client) throw new Error("AI isn't set up (no ANTHROPIC_API_KEY)");
     const why = await blocked(uid);
     if (why) throw Object.assign(new Error(why), { budget: true });
-    const res = await client.beta.messages.stream({ model: MODEL, betas: ["server-side-fallback-2026-07-01"], fallbacks: "default", ...params }).finalMessage();
+    // No server-side fallback for Haiku: a declined request just comes back with stop_reason "refusal".
+    const res = await client.messages.stream({ model: MODEL, ...params }).finalMessage();
     await charge(res.usage || {}, uid);
     return res;
   }

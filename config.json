@@ -14,11 +14,12 @@
   "liveMinutes": 70,
   "alwaysOn": true,
   "runMinutes": 340,
-  "aiDailyUsd": 50,
-  "aiPerPersonUsd": 15,
-  "aiNotesUsd": 10,
+  "aiDailyUsd": 5,
+  "aiPerPersonUsd": 2,
+  "aiNotesUsd": 1,
   "aiJobsAtOnce": 3,
   "reportAiTeams": 60,
   "queueMatchesAhead": 3,
-  "queueMinutes": 10
+  "queueMinutes": 10,
+  "aiMonthlyUsd": 50
 }

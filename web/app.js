@@ -1405,17 +1405,17 @@ const offlineBar = () => navigator.onLine ? null : h("div", { class: "offline", 
 // Both are jobs in aiJobs that the sync job answers with Claude (sync/assist.mjs), within the
 // team's daily budget (meta/ai). The chat keeps its history on this phone.
 const aiReady = () => S.ai?.enabled;
-const aiLeft = () => S.ai && S.ai.day === new Date().toLocaleDateString("en-CA", { timeZone: "America/Toronto" }) ? Math.max(0, (S.ai.cap || 50) - (S.ai.usd || 0)) : S.ai?.cap || 50;
 const money = x => `$${x < 10 ? x.toFixed(2) : x.toFixed(0)}`;
 function aiSection() {
   if (!S.ai) return [];
-  const today = S.ai.day === new Date().toLocaleDateString("en-CA", { timeZone: "America/Toronto" });
+  const day = new Date().toLocaleDateString("en-CA", { timeZone: "America/Toronto" });
+  const today = S.ai.day === day, thisMonth = S.ai.month === day.slice(0, 7);
   const mine = today ? S.ai.people?.[user.uid] || 0 : 0;
   return [section("AI"),
     group(lrow({ info: true, ic: "scout", title: S.ai.enabled ? "Ask Scout and Scout for me" : "AI isn't set up", sub: S.ai.enabled
-      ? `Team today: ${money(today ? S.ai.usd || 0 : 0)} of ${money(S.ai.cap || 50)} · You: ${money(mine)} of ${money(S.ai.perPerson || 15)}`
+      ? `This month: ${money(thisMonth ? S.ai.monthUsd || 0 : 0)} of ${money(S.ai.monthCap || 50)} · Today: ${money(today ? S.ai.usd || 0 : 0)} of ${money(S.ai.cap || 5)} · You today: ${money(mine)} of ${money(S.ai.perPerson || 2)}`
       : "An admin adds the ANTHROPIC_API_KEY secret on GitHub to turn it on." })),
-    h("p", { class: "footnote" }, "Uses Claude (Anthropic). The daily budget resets at midnight Toronto time and covers everyone, including the nightly AI team notes.")];
+    h("p", { class: "footnote" }, "Uses Claude Haiku (Anthropic's low-cost model). The monthly budget covers everyone, including the nightly AI team notes; daily limits reset at midnight Toronto time.")];
 }
 
 /** Light formatting for AI answers: paragraphs, "- " lists, **bold** and team numbers as links. Never HTML. */
