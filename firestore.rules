@@ -8,6 +8,14 @@ service cloud.firestore {
     function signedIn() { return request.auth != null; }
     function isMember() { return signedIn() && exists(/databases/$(database)/documents/members/$(request.auth.uid)); }
     function goodNickname(n) { return n is string && n.size() > 0 && n.size() <= 24; }
+    // Each named field, if present, is a string of at most `max` characters.
+    function smallStrings(d, names, max) {
+      return names.size() == 0 || ((!(names[0] in d) || (d[names[0]] is string && d[names[0]].size() <= max))
+        && (names.size() < 2 || !(names[1] in d) || (d[names[1]] is string && d[names[1]].size() <= max))
+        && (names.size() < 3 || !(names[2] in d) || (d[names[2]] is string && d[names[2]].size() <= max))
+        && (names.size() < 4 || !(names[3] in d) || (d[names[3]] is string && d[names[3]].size() <= max))
+        && (names.size() < 5 || !(names[4] in d) || (d[names[4]] is string && d[names[4]].size() <= max)));
+    }
     // Admins are listed by account id in meta/admins (the sync fills it from the ADMIN_EMAILS secret).
     function isAdmin() {
       return signedIn() && exists(/databases/$(database)/documents/meta/admins)
@@ -28,7 +36,12 @@ service cloud.firestore {
     match /scouting/{id} {
       allow read: if isMember();
       allow create: if isMember()
-        && request.resource.data.keys().hasOnly(['team', 'event', 'match', 'autoPins', 'auto', 'rating', 'notes', 'by', 'nickname', 'at', 'game'])
+        && request.resource.data.keys().hasOnly(['team', 'event', 'match', 'autoPins', 'auto', 'rating', 'notes', 'by', 'nickname', 'at', 'game',
+             'drive', 'autoSide', 'endgame', 'defense', 'driver', 'reliable', 'tags'])
+        && smallStrings(request.resource.data, ['drive', 'autoSide', 'endgame', 'reliable'], 30)
+        && (!('defense' in request.resource.data) || (request.resource.data.defense is int && request.resource.data.defense >= 0 && request.resource.data.defense <= 3))
+        && (!('driver' in request.resource.data) || (request.resource.data.driver is int && request.resource.data.driver >= 0 && request.resource.data.driver <= 5))
+        && (!('tags' in request.resource.data) || (request.resource.data.tags is list && request.resource.data.tags.size() <= 12))
         && (!('game' in request.resource.data) || request.resource.data.game in ['override', 'pushback'])
         && request.resource.data.by == request.auth.uid
         && request.resource.data.team is string && request.resource.data.team.size() <= 12
@@ -64,6 +77,33 @@ service cloud.firestore {
     }
 
     match /meta/{d} { allow read: if isMember(); }
+
+    // Pit scouting: one shared sheet per team per game ("2088A__override"), anyone can update it.
+    match /pits/{id} {
+      allow read: if isMember();
+      allow create, update: if isMember()
+        && request.resource.data.keys().hasOnly(['team', 'game', 'drive', 'motors', 'intake', 'scoring', 'endgame', 'autos', 'strategy', 'notes', 'by', 'nickname', 'at'])
+        && request.resource.data.by == request.auth.uid && goodNickname(request.resource.data.nickname)
+        && request.resource.data.team is string && request.resource.data.team.size() <= 12
+        && request.resource.data.game in ['override', 'pushback']
+        && smallStrings(request.resource.data, ['drive', 'motors'], 60)
+        && smallStrings(request.resource.data, ['intake', 'scoring', 'endgame', 'autos', 'strategy'], 300)
+        && request.resource.data.notes is string && request.resource.data.notes.size() <= 1000;
+    }
+
+    // Notes on our own matches (what went right, what went wrong, what to change), one per match.
+    match /matchNotes/{id} {
+      allow read: if isMember();
+      allow create, update: if isMember()
+        && request.resource.data.keys().hasOnly(['event', 'match', 'name', 'teams', 'game', 'good', 'bad', 'next', 'by', 'nickname', 'at'])
+        && request.resource.data.by == request.auth.uid && goodNickname(request.resource.data.nickname)
+        && request.resource.data.game in ['override', 'pushback']
+        && request.resource.data.teams is list && request.resource.data.teams.size() <= 6
+        && smallStrings(request.resource.data, ['event', 'match', 'name'], 40)
+        && smallStrings(request.resource.data, ['good', 'bad'], 800)
+        && smallStrings(request.resource.data, ['next'], 400);
+      allow delete: if isMember() && resource.data.by == request.auth.uid;
+    }
 
     // AI jobs: a chat question or a "Scout for me" report, answered by the sync job (which also
     // keeps to the daily spending cap). Each person sees only their own.

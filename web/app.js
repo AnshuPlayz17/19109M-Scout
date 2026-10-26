@@ -35,6 +35,8 @@ const S = {
   scales: {},      // game -> percentile scales
   reports: {},     // event id -> Scout for me report (null = none yet)
   ai: undefined,   // meta/ai: is AI set up, today's spending
+  pits: {},        // team number -> pit scouting sheet (null = none yet)
+  matchNotes: {},  // match id -> [our notes on that match]
 };
 const subs = new Map();
 const us = () => S.status?.team?.number || "19109M";
@@ -54,6 +56,10 @@ const watchTeam = n => {
   }, { includeMetadataChanges: true });
 };
 // Last season's stats for a team (the dashed shape on its hexagon chart).
+const watchPit = n => watch(`pit${n}`, doc(db, "pits", `${n}__${G.key}`), s => { S.pits[n] = s.exists() ? s.data({ serverTimestamps: "estimate" }) : null; }, { includeMetadataChanges: true });
+const watchMatchNotes = mid => watch(`mn${mid}`, query(collection(db, "matchNotes"), where("match", "==", String(mid))), s => {
+  S.matchNotes[mid] = s.docs.map(d => ({ id: d.id, pending: d.metadata.hasPendingWrites, ...d.data({ serverTimestamps: "estimate" }) })).filter(x => x.game === G.key);
+}, { includeMetadataChanges: true });
 const watchPast = n => watch(`p${n}`, doc(db, "teamstats", n + "__pushback"), s => { S.past[n] = s.exists() ? s.data() : null; });
 // Percentiles for the hexagon charts (meta/scales-<game>, written by the nightly sync).
 const watchScales = game => watch(`scales-${game}`, doc(db, "meta", `scales-${game}`), s => { S.scales[game] = s.exists() ? s.data() : null; });
@@ -589,8 +595,44 @@ views.match = (eid, mid) => {
     p !== undefined ? card(h("div", { class: "row", style: "flex-wrap:nowrap;gap:16px" },
       h("div", { style: "flex:1;display:flex;flex-direction:column;gap:8px;min-width:0" }, h("span", { class: "eyebrow" }, m.scored ? "Predicted before the match" : "Win chance"), probBar(p)),
       ring(Math.max(p, 1 - p), { size: 64, color: p >= 0.5 ? "var(--red)" : "var(--blue)", label: p >= 0.5 ? "red" : "blue" }))) : null,
-    h("div", { class: "cols", style: "grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr))" }, side_("red"), side_("blue"))];
+    h("div", { class: "cols", style: "grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr))" }, side_("red"), side_("blue")),
+    ...(m.red.teams.includes(us()) || m.blue.teams.includes(us()) ? matchNotes(ev, m) : [])];
 };
+
+// ---- notes on our own matches: what went right, what went wrong, what to change. One per person
+// per match; everyone sees all of them (behind the team code), and the AI reads them too.
+const mnDraft = {};
+function matchNotes(ev, m) {
+  watchMatchNotes(m.id);
+  const list = S.matchNotes[m.id] || [];
+  const mine = list.find(x => x.by === user.uid);
+  const out = [section("Our match notes")];
+  const d = mnDraft[m.id];
+  if (d) {
+    const field = (k, label, ph, max) => h("label", { class: "field" }, label, h("textarea", { maxlength: max, rows: 2, placeholder: ph, oninput: e => { d[k] = e.target.value; } }, d[k] || ""));
+    out.push(h("form", { class: "card", onsubmit: e => {
+      e.preventDefault();
+      if (![d.good, d.bad, d.next].some(x => x?.trim())) return;
+      setDoc(doc(db, "matchNotes", `${m.id}__${user.uid}`), { event: String(ev.id), match: String(m.id), name: m.name, game: G.key,
+        teams: [...m.red.teams, ...m.blue.teams].filter(t => t !== us()), good: (d.good || "").trim().slice(0, 800), bad: (d.bad || "").trim().slice(0, 800),
+        next: (d.next || "").trim().slice(0, 400), by: user.uid, nickname: S.nickname, at: serverTimestamp() })
+        .catch(err => toast(`Match notes couldn't be saved (${err.code || err.message}).`, "bad"));
+      toast(navigator.onLine ? "Match notes saved" : "Saved on this phone. They send when you're back online.");
+      mnDraft[m.id] = null; render();
+    } },
+      field("good", "What went well", "Auto scored, fast cycles, partner did their job", 800),
+      field("bad", "What went wrong", "Missed the park, got pushed off the goal, intake jammed", 800),
+      field("next", "Change for next time", "Start on the left, play defense on 2088A", 400),
+      h("div", { class: "row" }, h("button", { class: "btn primary", type: "submit" }, "Save"), h("button", { class: "btn", type: "button", onclick: () => { mnDraft[m.id] = null; render(); } }, "Cancel"))));
+  } else out.push(h("button", { type: "button", class: "btn", onclick: () => { mnDraft[m.id] = { ...(mine || {}) }; render(); } }, icon("plus"), mine ? "Edit my notes" : "Add notes on this match"));
+  if (list.length && !areasOpen()) out.push(areaGate("Match notes", `${list.length} note${list.length === 1 ? "" : "s"} on this match from the team.`, { focus: false }));
+  else if (list.length) out.push(group(...list.map(x => h("div", { class: "note" },
+    h("div", { class: "meta" }, h("b", {}, x.nickname), h("span", { class: "muted small" }, ago(x.at)), x.pending ? h("span", { class: "pill waiting" }, "Waiting to send") : null),
+    x.good ? h("p", {}, h("b", { class: "good-t" }, "Went well: "), x.good) : null,
+    x.bad ? h("p", {}, h("b", { class: "bad-t" }, "Went wrong: "), x.bad) : null,
+    x.next ? h("p", {}, h("b", {}, "Next time: "), x.next) : null))));
+  return out;
+}
 
 let teamQuery = "", teamScope = "event";
 views.teams = () => {
@@ -641,9 +683,33 @@ const AUTO_OPTIONS = G.key === "pushback"
   ? ["No auto", "Blocks in Long Goal", "Blocks in Center Goal", "Moved blocks only", "Parked", "Interfered / broke"]
   : ["No auto", "Toggle only", "Toggle + preload", "Midfield rush", "Several pins", "Interfered / broke"];
 const PIECE = G.key === "pushback" ? "block" : "pin"; // what an auto scores, for the scouting form
+// The extra details on a scouting note. Each is optional; numbers are stored for defense and driver.
+const SCOUT_MORE = [
+  { key: "drive", label: "Drivetrain", options: ["Tank", "X-drive", "Mecanum", "Other"] },
+  { key: "autoSide", label: "Auto side", options: ["Left", "Right", "Both", "Skills only"] },
+  { key: "endgame", label: G.key === "pushback" ? "Park" : "Endgame", options: G.key === "pushback" ? ["No park", "Parked", "Double park"] : ["None", "Tried", "Done"] },
+  { key: "defense", label: "Defense", options: ["None", "Light", "Heavy"], num: true },
+  { key: "driver", label: "Driver", options: ["Shaky", "OK", "Good", "Great"], num: true },
+  { key: "reliable", label: "Reliability", options: ["Solid", "Minor issues", "Broke down"] },
+];
+const SCOUT_TAGS = ["Fast", "Accurate", "Strong auto", "Good defense", "Big scorer", "Smart driver", "Great partner", "Slow", "Tips over", "Jams", "Messy"];
+/** Chips where tapping picks one (tap again to clear). `get`/`set` read and write the value. */
+function choice(options, get, set, label) {
+  const box = h("div", { class: "optchips", role: "group", "aria-label": label });
+  const draw = () => box.replaceChildren(...options.map((o, i) => h("button", { type: "button", "aria-pressed": String(get() === o || get() === i + 1),
+    onclick: () => { set(get() === o || get() === i + 1 ? null : o, i + 1); draw(); } }, o)));
+  draw();
+  return box;
+}
+/** A scouting note's extra details as short labels, for the notes list. */
+const scoutBits = x => [
+  ...SCOUT_MORE.map(f => { const v = f.num ? f.options[(x[f.key] || 0) - 1] : x[f.key]; return v ? `${f.label}: ${v}` : null; }).filter(Boolean),
+  ...(x.tags || []),
+];
 const draft = {};
 views.team = n => {
   watchTeam(n);
+  watchPit(n);
   if (G.key === "override") watchPast(n);
   if (!teamInfo(n)) loadIndex("teams");
   const t = teamInfo(n), st = S.stats[n], note = S.notes[n], sc = S.scouting[n] || [];
@@ -686,7 +752,7 @@ views.team = n => {
   else left.push(h("p", { class: "footnote" }, st === undefined ? "Loading…" : st ? "No events played yet this season." : "No season stats saved for this team yet. Tap Refresh to load them."));
 
   // Scouting form
-  const d = draft[n] ||= { match: "", autoPins: 0, auto: "", rating: 0, notes: "", event: fe?.id || "" };
+  const d = draft[n] ||= { match: "", autoPins: 0, auto: "", rating: 0, notes: "", event: fe?.id || "", tags: [], more: false };
   const stars = h("div", { class: "stars", role: "radiogroup", "aria-label": "How good" });
   const drawStars = () => stars.replaceChildren(...[1, 2, 3, 4, 5].map(i => h("button", { type: "button", class: i <= d.rating ? "on" : null, "aria-label": `${i} star${i > 1 ? "s" : ""}`, "aria-checked": String(i === d.rating), role: "radio", onclick: () => { d.rating = i; drawStars(); } }, icon("star"))));
   drawStars();
@@ -701,8 +767,11 @@ views.team = n => {
     if (!d.rating) { msg.textContent = "Pick a star rating."; return; }
     // Saved on the phone first and sent when there's a connection: event Wi-Fi drops all the
     // time, so this doesn't wait for the server (Firestore keeps the write until it goes through).
+    const extra = {};
+    for (const f of SCOUT_MORE) if (d[f.key]) extra[f.key] = d[f.key];
+    if (d.tags.length) extra.tags = d.tags;
     setDoc(doc(collection(db, "scouting")), { team: n, event: String(d.event || ""), match: d.match.trim().slice(0, 20), autoPins: Number(d.autoPins) || 0,
-      auto: d.auto, rating: d.rating, notes: d.notes.trim().slice(0, 1000), game: G.key, by: user.uid, nickname: S.nickname, at: serverTimestamp() })
+      auto: d.auto, rating: d.rating, notes: d.notes.trim().slice(0, 1000), game: G.key, by: user.uid, nickname: S.nickname, at: serverTimestamp(), ...extra })
       .catch(err => toast(`A note on ${n} couldn't be saved (${err.code || err.message}).`, "bad"));
     toast(navigator.onLine ? `Note on ${n} saved` : `Saved on this phone. It sends when you're back online.`);
     draft[n] = null; render();
@@ -715,15 +784,26 @@ views.team = n => {
         h("button", { type: "button", "aria-label": `One more ${PIECE}`, onclick: () => stepPins(1) }, "+")))),
     h("div", { class: "field" }, "Auto", opts),
     h("div", { class: "field" }, "How good", stars), // not a <label>: it would re-click the first star
+    h("details", { class: "more-fields", open: d.more || null, ontoggle: e => { d.more = e.target.open; } },
+      h("summary", {}, "More details", h("span", { class: "muted small" }, "drivetrain, auto side, endgame, defense, driver, reliability, tags")),
+      ...SCOUT_MORE.map(f => h("div", { class: "field" }, f.label, choice(f.options, () => d[f.key], (v, i) => { d[f.key] = v === null ? null : f.num ? i : v; }, f.label))),
+      h("div", { class: "field" }, "Tags", (() => {
+        const box = h("div", { class: "optchips", role: "group", "aria-label": "Tags" });
+        const draw = () => box.replaceChildren(...SCOUT_TAGS.map(t => h("button", { type: "button", "aria-pressed": String(d.tags.includes(t)),
+          onclick: () => { d.tags = d.tags.includes(t) ? d.tags.filter(x => x !== t) : [...d.tags, t]; draw(); } }, t)));
+        draw();
+        return box;
+      })())),
     h("label", { class: "field" }, "Notes", h("textarea", { maxlength: 1000, placeholder: "Driving, defense, what they score, anything breaking", oninput: e => { d.notes = e.target.value; } }, d.notes)),
     msg, h("button", { class: "btn primary wide", type: "submit" }, "Save note"));
-  right.push(form);
+  right.push(pitCard(n, open), form);
   if (!open && sc.length) right.push(areaGate("Our scouting", `${sc.length} note${sc.length === 1 ? "" : "s"} on ${n} from the team.`, { focus: false }));
   else if (sc.length) right.push(section(`Our scouting · ★ ${avg.toFixed(1)}`), group(...sc.map(x => h("div", { class: "note" },
     h("div", { class: "meta" }, h("b", {}, x.nickname), h("span", { class: "muted small" }, [x.match, ago(x.at)].filter(Boolean).join(" · ")),
       x.pending ? h("span", { class: "pill waiting", title: "Saved on this phone; sends when there's a connection" }, "Waiting to send") : null),
     h("span", { class: "starline", "aria-label": `${x.rating} of 5 stars` }, "★".repeat(x.rating) + "☆".repeat(5 - x.rating)),
     x.auto || x.autoPins ? h("span", { class: "small muted" }, [x.auto, x.autoPins ? `${x.autoPins} auto ${PIECE}s` : ""].filter(Boolean).join(" · ")) : null,
+    scoutBits(x).length ? h("div", { class: "row tagrow" }, scoutBits(x).map(b => h("span", { class: "pill" }, b))) : null,
     x.notes ? h("p", {}, x.notes) : null,
     x.by === user.uid ? h("button", { class: "btn small danger", style: "align-self:flex-start", onclick: () => { if (confirm("Delete this note?")) deleteDoc(doc(db, "scouting", x.id)); } }, "Delete") : null))));
   right.push(group(lrow({ href: reTeam(n), title: "Open on VEX Events", external: true })));
@@ -731,6 +811,45 @@ views.team = n => {
   return [h("header", { class: "profile" }, h("div", { class: "t" }, h("h1", {}, n), h("p", {}, [t?.name, t?.org, [t?.city, t?.region].filter(Boolean).join(", ")].filter(Boolean).join(" · ")))),
     h("div", { class: "cols" }, h("div", { class: "col" }, ...left), h("div", { class: "col" }, ...right))];
 };
+
+// ---- pit scouting: one shared sheet per team, filled in at their pit. Anyone can edit it.
+const PIT_FIELDS = [
+  ["motors", "Motors and gearing", "6 motors, 450 rpm", 60],
+  ["intake", "Intake", "What it picks up, how fast", 300],
+  ["scoring", "Scoring", "What they score and where", 300],
+  ["endgame", G.key === "pushback" ? "Parking" : "Endgame", "What they do at the end", 300],
+  ["autos", "Autos they have", "Which sides, how many points, solo AWP?", 300],
+  ["strategy", "Their game plan", "How they like to play, what they want in a partner", 300],
+];
+const pitDraft = {};
+function pitCard(n, open) {
+  const p = S.pits[n];
+  if (pitDraft[n]) {
+    const d = pitDraft[n];
+    const save = e => {
+      e.preventDefault();
+      const data = { team: n, game: G.key, by: user.uid, nickname: S.nickname, at: serverTimestamp(), notes: (d.notes || "").trim().slice(0, 1000) };
+      if (d.drive) data.drive = d.drive;
+      for (const [k, , , max] of PIT_FIELDS) if ((d[k] || "").trim()) data[k] = d[k].trim().slice(0, max);
+      setDoc(doc(db, "pits", `${n}__${G.key}`), data).catch(err => toast(`Pit notes on ${n} couldn't be saved (${err.code || err.message}).`, "bad"));
+      toast(navigator.onLine ? `Pit notes on ${n} saved` : "Saved on this phone. They send when you're back online.");
+      pitDraft[n] = null; render();
+    };
+    return h("form", { class: "card", onsubmit: save },
+      h("div", { class: "row between" }, h("h3", {}, `Pit scouting · ${n}`), h("button", { type: "button", class: "btn small plain", onclick: () => { pitDraft[n] = null; render(); } }, "Cancel")),
+      h("div", { class: "field" }, "Drivetrain", choice(SCOUT_MORE[0].options, () => d.drive, v => { d.drive = v; }, "Drivetrain")),
+      ...PIT_FIELDS.map(([k, label, ph, max]) => h("label", { class: "field" }, label, h(max > 60 ? "textarea" : "input", { maxlength: max, placeholder: ph, rows: 2, value: max > 60 ? null : d[k] || "", oninput: e => { d[k] = e.target.value; } }, max > 60 ? d[k] || "" : null))),
+      h("label", { class: "field" }, "Anything else", h("textarea", { maxlength: 1000, placeholder: "Build quality, weight, who the driver is, what they said", oninput: e => { d.notes = e.target.value; } }, d.notes || "")),
+      h("button", { class: "btn primary wide", type: "submit" }, "Save pit notes"));
+  }
+  const edit = h("button", { type: "button", class: "btn small", onclick: () => { pitDraft[n] = { ...(p || {}) }; render(); } }, p ? "Edit" : "Add pit notes");
+  if (!p) return card(h("div", { class: "row between" }, h("h3", {}, "Pit scouting"), edit), h("p", { class: "muted small" }, p === undefined ? "Loading…" : "Nobody has scouted their pit yet. Drivetrain, intake, autos and their game plan, from talking to them."));
+  if (!open) return card(h("div", { class: "row between" }, h("h3", {}, "Pit scouting"), edit), h("p", { class: "muted small" }, `Pit notes by ${p.nickname}, ${ago(p.at)}. Unlock scouting notes to read them.`));
+  const rows = [["Drivetrain", p.drive], ...PIT_FIELDS.map(([k, label]) => [label, p[k]]), ["Notes", p.notes]].filter(([, v]) => v);
+  return card(h("div", { class: "row between" }, h("h3", {}, "Pit scouting"), edit),
+    h("dl", { class: "pitlist" }, rows.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)])),
+    h("p", { class: "muted small" }, `By ${p.nickname}, ${ago(p.at)}`, p.pending ? " · waiting to send" : ""));
+}
 
 // ---- autos (view only; edited in the robot repo's scout/autos.json)
 const T = 23.8, W = 3 * T;

@@ -632,7 +632,7 @@ input[type="password"]:not(:placeholder-shown) { font-size: 16px; -webkit-text-s
 .offline { display: flex; gap: 10px; align-items: center; padding: 10px 14px; margin-bottom: 12px; border-radius: 10px; background: var(--surface-2); color: var(--muted); font-size: 0.8125rem; }
 .offline svg { width: 18px; height: 18px; flex: none; }
 .offline b { color: var(--fg); }
-.toast { position: fixed; z-index: 60; left: 50%; bottom: calc(var(--nav-h) + 18px + env(safe-area-inset-bottom)); transform: translateX(-50%); max-width: min(440px, calc(100vw - 32px));
+.toast { position: fixed; z-index: 60; left: 50%; bottom: calc(var(--nav-h) + 74px + env(safe-area-inset-bottom)); transform: translateX(-50%); max-width: min(440px, calc(100vw - 32px));
   background: var(--fg); color: var(--bg); border-radius: 12px; padding: 10px 16px; font-size: 0.875rem; font-weight: 500; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
   animation: toastin 0.25s cubic-bezier(0.2, 0.8, 0.2, 1); transition: opacity 0.25s, transform 0.25s; }
 .toast.bad { background: var(--bad); color: #fff; }
@@ -749,3 +749,14 @@ input[type="password"]:not(:placeholder-shown) { font-size: 16px; -webkit-text-s
 .chatinput .send { width: 44px; min-width: 44px; padding: 0; border-radius: 22px; display: grid; place-items: center; }
 .chatfoot { font-size: 0.6875rem; color: var(--faint); text-align: center; padding: 0 12px 8px; }
 @media (prefers-reduced-motion: reduce) { .queue, .queue .qicon svg, .radar .shape, .msg, .dots i { animation: none; } }
+
+/* ---------- more notes: extra scouting details, pit sheet, match notes */
+.more-fields { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 12px; }
+.more-fields[open] { padding-bottom: 14px; }
+.more-fields summary { cursor: pointer; font-weight: 600; display: flex; flex-direction: column; gap: 2px; list-style: none; }
+.more-fields summary::-webkit-details-marker { display: none; }
+.tagrow { gap: 6px; }
+.pitlist { display: grid; grid-template-columns: minmax(90px, auto) 1fr; gap: 8px 14px; margin: 0; font-size: 0.9375rem; }
+.pitlist dt { color: var(--muted); font-size: 0.8125rem; font-weight: 600; padding-top: 2px; }
+.pitlist dd { margin: 0; }
+.good-t { color: var(--good); } .bad-t { color: var(--bad); }
