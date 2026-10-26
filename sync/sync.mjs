@@ -400,6 +400,11 @@ async function quick() {
   await handleRequests(ctx);
   await writeStatus(ctx, { lastQuick: FieldValue.serverTimestamp() });
   if (!liveAtStart) await pastSeason({ wasLive: false }); // weekly Push Back refresh, before the long loop
+  // Percentiles for the app's hexagon charts, if they're missing or over a day old.
+  for (const g of Object.keys(GAMES)) {
+    const at = (await db.doc(`meta/scales-${g}`).get()).get("updatedAt")?.toMillis?.() || 0;
+    if (Date.now() - at > DAY) await assist.writeScales(g).catch(err => console.log(`  scales: ${err.message}`));
+  }
   await live(ctx);
 }
 
