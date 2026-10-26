@@ -65,6 +65,34 @@ service cloud.firestore {
 
     match /meta/{d} { allow read: if isMember(); }
 
+    // AI jobs: a chat question or a "Scout for me" report, answered by the sync job (which also
+    // keeps to the daily spending cap). Each person sees only their own.
+    match /aiJobs/{id} {
+      allow create: if isMember()
+        && request.resource.data.keys().hasOnly(['kind', 'by', 'nickname', 'at', 'game', 'status', 'messages', 'open', 'event'])
+        && request.resource.data.by == request.auth.uid
+        && request.resource.data.status == 'new'
+        && request.resource.data.game in ['override', 'pushback']
+        && goodNickname(request.resource.data.nickname)
+        && ((request.resource.data.kind == 'chat' && request.resource.data.messages is list && request.resource.data.messages.size() <= 12)
+          || (request.resource.data.kind == 'report' && request.resource.data.event is string && request.resource.data.event.size() <= 12));
+      allow read, delete: if isMember() && resource.data.by == request.auth.uid;
+    }
+    // Scout for me reports, shared with the whole team.
+    match /reports/{d} { allow read: if isMember(); }
+
+    // Phones that want "Queue now" notifications (Web Push). Each person manages their own.
+    match /pushSubs/{id} {
+      allow create, update: if isMember()
+        && request.resource.data.keys().hasOnly(['by', 'endpoint', 'p256dh', 'auth', 'at'])
+        && request.resource.data.by == request.auth.uid
+        && (resource == null || resource.data.by == request.auth.uid)
+        && request.resource.data.endpoint is string && request.resource.data.endpoint.size() < 1000
+        && request.resource.data.p256dh is string && request.resource.data.p256dh.size() < 200
+        && request.resource.data.auth is string && request.resource.data.auth.size() < 100;
+      allow read, delete: if signedIn() && resource.data.by == request.auth.uid;
+    }
+
     // "Forgot the team code? Ask an admin": anyone signed in (members, and people stuck at the
     // join screen) can ask; only admins see the requests. One request per account.
     match /codeRequests/{uid} {

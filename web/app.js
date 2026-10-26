@@ -1,8 +1,9 @@
 // 19109M Scout: events, teams, match predictions, scouting notes, autos, checklists and a match scorer.
 import { db, h, requireMember, signOut, auth, splash, hideSplash, rememberMember, secret, askAdmin, verdict } from "./fb.js";
 import { createBoard } from "./board.js";
+import { AXES, profile } from "./profile.js";
 import {
-  doc, getDoc, onSnapshot, collection, query, where, addDoc, setDoc, updateDoc, deleteDoc, serverTimestamp,
+  doc, getDoc, onSnapshot, collection, query, where, addDoc, setDoc, updateDoc, deleteDoc, serverTimestamp, orderBy, limit,
 } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 import { EmailAuthProvider, reauthenticateWithCredential } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
 
@@ -11,7 +12,7 @@ const root = document.getElementById("app");
 // own season data from the sync, scoring rules, field and whiteboard. Chosen in Settings.
 const GAMES = {
   override: { key: "override", name: "Override", years: "2026–27", status: "status", index: "", suffix: "", field: "field.webp" },
-  pushback: { key: "pushback", name: "Push Back", years: "2025–26", status: "status-pushback", index: "pushback-", suffix: "__pushback", field: "field-pushback.svg" },
+  pushback: { key: "pushback", name: "Push Back", years: "2025–26", status: "status-pushback", index: "pushback-", suffix: "__pushback", field: "field-pushback.webp" },
 };
 const G = GAMES[(() => { try { return JSON.parse(localStorage.getItem("19109m.game")); } catch { return null; } })()] || GAMES.override;
 const { user, member } = await requireMember(root);
@@ -30,22 +31,32 @@ const S = {
   autos: undefined,
   lists: undefined, // checklists
   requested: new Set(),
+  past: {},        // team number -> last season's (Push Back) stats
+  scales: {},      // game -> percentile scales
+  reports: {},     // event id -> Scout for me report (null = none yet)
+  ai: undefined,   // meta/ai: is AI set up, today's spending
 };
 const subs = new Map();
 const us = () => S.status?.team?.number || "19109M";
 
-function watch(key, ref, set) {
+function watch(key, ref, set, opts = {}) {
   if (subs.has(key)) return;
-  subs.set(key, onSnapshot(ref, snap => { set(snap); refresh(); }, err => console.warn(key, err.code)));
+  subs.set(key, onSnapshot(ref, opts, snap => { set(snap); refresh(); }, err => console.warn(key, err.code)));
 }
+const unwatch = key => { subs.get(key)?.(); subs.delete(key); };
 const watchEvent = id => watch(`e${id}`, doc(db, "events", String(id)), s => { S.events[id] = s.exists() ? s.data() : null; });
 const watchTeam = n => {
   watch(`n${n}`, doc(db, "notes", n + G.suffix), s => { S.notes[n] = s.exists() ? s.data() : null; });
   watch(`s${n}`, doc(db, "teamstats", n + G.suffix), s => { S.stats[n] = s.exists() ? s.data() : null; });
+  // Notes saved offline show straight away, marked "waiting to send" until they reach the server.
   watch(`c${n}`, query(collection(db, "scouting"), where("team", "==", n)), s => {
-    S.scouting[n] = s.docs.map(d => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) })).filter(x => (x.game || "override") === G.key).sort((a, b) => (b.at?.toMillis?.() || 0) - (a.at?.toMillis?.() || 0));
-  });
+    S.scouting[n] = s.docs.map(d => ({ id: d.id, pending: d.metadata.hasPendingWrites, ...d.data({ serverTimestamps: "estimate" }) })).filter(x => (x.game || "override") === G.key).sort((a, b) => (b.at?.toMillis?.() || 0) - (a.at?.toMillis?.() || 0));
+  }, { includeMetadataChanges: true });
 };
+// Last season's stats for a team (the dashed shape on its hexagon chart).
+const watchPast = n => watch(`p${n}`, doc(db, "teamstats", n + "__pushback"), s => { S.past[n] = s.exists() ? s.data() : null; });
+// Percentiles for the hexagon charts (meta/scales-<game>, written by the nightly sync).
+const watchScales = game => watch(`scales-${game}`, doc(db, "meta", `scales-${game}`), s => { S.scales[game] = s.exists() ? s.data() : null; });
 watch("status", doc(db, "meta", G.status), s => {
   S.status = s.exists() ? s.data() : null;
   for (const e of S.status?.ourEvents || []) watchEvent(e.id);
@@ -57,6 +68,7 @@ watch("admins", doc(db, "meta", "admins"), s => {
     S.codeRequests = q.docs.map(d => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) })).sort((a, b) => (b.at?.toMillis?.() || 0) - (a.at?.toMillis?.() || 0));
   });
 });
+watch("ai", doc(db, "meta", "ai"), s => { S.ai = s.exists() ? s.data() : null; });
 const watchAutos = () => watch("autos", doc(db, "autos", "main"), s => { S.autos = s.exists() ? s.data() : { autos: [] }; });
 const watchLists = () => watch("lists", collection(db, "checklists"), s => {
   S.lists = s.docs.map(d => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) })).sort((a, b) => (a.order ?? 99) - (b.order ?? 99) || String(a.name).localeCompare(b.name));
@@ -122,6 +134,11 @@ const ICONS = {
   expand: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
   lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+  scout: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>',
+  chat: '<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9.5h8M8 12.5h5"/>',
+  send: '<path d="M5 12h13M12 5l7 7-7 7"/>',
+  bell: '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/>',
+  wifi: '<path d="M2 8.5a15 15 0 0 1 20 0M5.5 12a10 10 0 0 1 13 0M9 15.5a5 5 0 0 1 6 0"/><circle cx="12" cy="19" r="1.2" fill="currentColor"/>',
   insta: '<rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.3" cy="6.7" r="1" fill="currentColor"/>',
 };
 const icon = (name, cls = "ic") => {
@@ -223,6 +240,69 @@ const searchBox = (placeholder, value, oninput) => h("div", { class: "search" },
 const seg = (options, cur, onpick, cls = "") => h("div", { class: `seg ${cls}`, role: "group" },
   options.map(([v, label]) => h("button", { type: "button", "data-v": v, "aria-pressed": String(cur === v), onclick: () => onpick(v) }, label)));
 const glance = (items, cls = "") => h("div", { class: `glance ${cls}` }, items.map(([value, label, extra]) => h("div", { class: extra || null }, h("b", {}, value), h("span", {}, label))));
+
+/**
+ * The hexagon chart: one corner per axis of profile.js, each pulled out as far as that team's
+ * percentile (centre = worst of all teams, corner = best). `series` is [{ p, cls }]: the first is
+ * drawn filled, later ones (last season) as dashed outlines. Corners with no data sit at the centre.
+ */
+function radarChart(series, { small = false } = {}) {
+  const R = 100, n = AXES.length, pt = (i, r) => [r * Math.sin((2 * Math.PI * i) / n), -r * Math.cos((2 * Math.PI * i) / n)];
+  const pad = small ? 8 : 64;
+  const svg = svgEl("svg", { viewBox: `${-R - pad} ${-R - (small ? 8 : 26)} ${2 * (R + pad)} ${2 * R + (small ? 16 : 52)}`, class: `radar${small ? " small" : ""}`, role: "img",
+    "aria-label": AXES.map(a => `${a.label} ${series[0]?.p?.[a.key] == null ? "no data" : `${Math.round(series[0].p[a.key] * 100)}th percentile`}`).join(", ") });
+  for (const f of [0.25, 0.5, 0.75, 1]) svgEl("polygon", { class: `grid${f === 1 ? " edge" : ""}`, points: AXES.map((_, i) => pt(i, f * R).join(",")).join(" ") }, svg);
+  AXES.forEach((_, i) => { const [x, y] = pt(i, R); svgEl("line", { class: "spoke", x1: 0, y1: 0, x2: x, y2: y }, svg); });
+  series.slice().reverse().forEach(({ p, cls }) => {
+    if (!p) return;
+    const pts = AXES.map((a, i) => pt(i, Math.max(0.04, p[a.key] ?? 0) * R));
+    svgEl("polygon", { class: `shape ${cls}`, points: pts.map(q => q.join(",")).join(" ") }, svg);
+    if (!small) AXES.forEach((a, i) => svgEl("circle", { class: `dot ${cls}${p[a.key] == null ? " none" : ""}`, cx: pts[i][0], cy: pts[i][1], r: cls === "now" ? 3.6 : 2.6 }, svg));
+  });
+  if (!small) AXES.forEach((a, i) => {
+    const [x, y] = pt(i, R + 16), v = series[0]?.p?.[a.key];
+    const anchor = Math.abs(x) < 5 ? "middle" : x > 0 ? "start" : "end";
+    const t = svgEl("text", { x, y: y + (y < -R ? -4 : y > R * 0.5 ? 10 : 4), "text-anchor": anchor, class: "lab" }, svg);
+    t.textContent = a.label;
+    const vt = svgEl("text", { x, y: y + (y < -R ? 10 : y > R * 0.5 ? 24 : 18), "text-anchor": anchor, class: `val${v == null ? " none" : ""}` }, svg);
+    vt.textContent = v == null ? "no data" : `${Math.round(v * 100)}`;
+  });
+  return svg;
+}
+/** The hexagon with its legend, for a team. `past` is last season's stats (Override mode only). */
+function profileCard(st, past, { title = "Profile" } = {}) {
+  watchScales(G.key);
+  if (G.key === "override") watchScales("pushback");
+  const sc = S.scales[G.key];
+  if (!st || !sc) return null;
+  const now = profile(st, sc), last = past && S.scales.pushback ? profile(past, S.scales.pushback) : null;
+  const known = AXES.filter(a => now[a.key] !== null).length;
+  return card(h("div", { class: "row between" }, h("h3", {}, title), h("span", { class: "muted small" }, `vs ${sc.n} teams`)),
+    radarChart([{ p: now, cls: "now" }, ...(last ? [{ p: last, cls: "past" }] : [])]),
+    h("div", { class: "legend" }, h("span", {}, h("i", { class: "lg-now" }), `${G.name} ${G.years}`), last ? h("span", {}, h("i", { class: "lg-past" }), "Push Back 2025–26") : null),
+    h("p", { class: "muted small" }, known < 4 ? "Not much data yet, so some corners sit at the centre. " : "", "Each corner is a percentile: 50 is a typical team, 100 the best. Consistency needs two or more events."),
+    trendChart(st));
+}
+/** Event by event: win rate as bars, average points as the line. Shows how steady a team is. */
+function trendChart(st) {
+  const evs = (st?.rankings || []).filter(r => r.wins + r.losses + (r.ties || 0) > 0);
+  if (evs.length < 2) return null;
+  const W = 300, H = 90, bw = Math.min(36, (W - 10) / evs.length - 6);
+  const maxAvg = Math.max(1, ...evs.map(r => Number(r.avg) || 0));
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H + 18}`, class: "trend", role: "img", "aria-label": evs.map(r => `${r.event}: ${r.wins}-${r.losses}-${r.ties}, rank ${r.rank}`).join("; ") });
+  const x = i => 5 + (i + 0.5) * ((W - 10) / evs.length);
+  svgEl("line", { x1: 0, x2: W, y1: H, y2: H, class: "base" }, svg);
+  evs.forEach((r, i) => {
+    const wr = (r.wins + 0.5 * (r.ties || 0)) / (r.wins + r.losses + (r.ties || 0));
+    svgEl("rect", { x: x(i) - bw / 2, y: H - wr * (H - 8), width: bw, height: Math.max(1, wr * (H - 8)), rx: 3, class: "bar" }, svg);
+    const t = svgEl("text", { x: x(i), y: H + 13, "text-anchor": "middle", class: "lab" }, svg); t.textContent = `#${r.rank}`;
+  });
+  const pts = evs.map((r, i) => (Number(r.avg) > 0 ? [x(i), H - (Number(r.avg) / maxAvg) * (H - 8)] : null)).filter(Boolean);
+  if (pts.length >= 2) svgEl("polyline", { points: pts.map(q => q.join(",")).join(" "), class: "line" }, svg);
+  pts.forEach(q => svgEl("circle", { cx: q[0], cy: q[1], r: 2.6, class: "pt" }, svg));
+  return h("div", { class: "trendbox" }, h("span", { class: "eyebrow" }, "Event by event"), svg,
+    h("div", { class: "legend" }, h("span", {}, h("i", { class: "lg-bar" }), "Win rate"), pts.length >= 2 ? h("span", {}, h("i", { class: "lg-line" }), "Avg points") : null, h("span", {}, "#rank under each")));
+}
 
 /** A chance shown as a big number, green when it favours the first side. `p` is 0..1. */
 function ring(p, { color = p >= 0.5 ? "var(--good)" : "var(--bad)", label = "to win", cls = "" } = {}) {
@@ -564,6 +644,7 @@ const PIECE = G.key === "pushback" ? "block" : "pin"; // what an auto scores, fo
 const draft = {};
 views.team = n => {
   watchTeam(n);
+  if (G.key === "override") watchPast(n);
   if (!teamInfo(n)) loadIndex("teams");
   const t = teamInfo(n), st = S.stats[n], note = S.notes[n], sc = S.scouting[n] || [];
   const fe = focusEvent(), ev = fe && S.events[fe.id];
@@ -577,6 +658,8 @@ views.team = n => {
     h("div", {}, h("span", {}, "OPR"), h("b", {}, o?.matches >= 3 ? Math.round(o.opr) : "–"), h("span", {}, rt?.basis?.length ? `Rating ${signed(rt.rating)}` : "Points per match")),
     h("div", {}, h("span", {}, "Season"), h("b", {}, st ? `${st.wins}-${st.losses}-${st.ties}` : "–"), h("span", {}, st ? `${st.events} event${st.events === 1 ? "" : "s"}${st.bestRank ? ` · best #${st.bestRank}` : ""}` : "")),
     h("div", {}, h("span", {}, "Best skills"), h("b", {}, st ? st.bestDriver + st.bestProg : "–"), h("span", {}, st ? `${st.bestDriver} driver + ${st.bestProg} auto` : "")))));
+  const prof = profileCard(st, G.key === "override" ? S.past[n] : null);
+  if (prof) left.push(prof);
   if (here) {
     const withUs = ev.ourMatches.filter(om => om.partners.includes(n) || om.opponents.includes(n));
     if (withUs.length) left.push(group(...withUs.map(om => lrow({ href: `#/match/${ev.id}/${om.id}`, title: `${om.partners.includes(n) ? "Partner" : "Opponent"} in ${om.name}`,
@@ -585,10 +668,12 @@ views.team = n => {
   const notesCard = card(h("h3", {}, "Notes"));
   const open = areasOpen(); // AI notes and our scouting are behind the team code
   if (note?.ai && open) {
-    notesCard.append(h("p", {}, note.ai.summary));
-    if (note.ai.strengths?.length || note.ai.watch?.length) notesCard.append(h("div", { class: "bullets" },
-      h("div", {}, h("span", { class: "eyebrow" }, "Strengths"), h("ul", {}, (note.ai.strengths || []).map(s => h("li", {}, s)))),
-      h("div", {}, h("span", { class: "eyebrow" }, "Watch for"), h("ul", {}, (note.ai.watch || []).map(s => h("li", {}, s))))));
+    const A = note.ai, list = (title, xs) => xs?.length ? h("div", {}, h("span", { class: "eyebrow" }, title), h("ul", {}, xs.map(s => h("li", {}, s)))) : null;
+    notesCard.append(h("p", {}, A.summary));
+    if (A.strengths?.length || A.watch?.length || A.weaknesses?.length) notesCard.append(h("div", { class: "bullets" },
+      list("Strengths", A.strengths), list("Weaknesses", A.weaknesses), list("Watch for", A.watch)));
+    const para = (title, text) => text ? h("div", { class: "notepara" }, h("span", { class: "eyebrow" }, title), h("p", {}, text)) : null;
+    notesCard.append(...[para("As our partner", A.asPartner), para("Playing against them", A.asOpponent), para("Trend", A.trend), para("Last season", A.lastSeason)].filter(Boolean));
   }
   if (note?.stats) notesCard.append(h("p", { class: note.ai && open ? "muted small" : "" }, note.stats));
   if (!note) notesCard.append(h("p", { class: "muted" }, note === undefined ? "Loading…" : "No notes yet. Notes are written for every team at our events."));
@@ -614,12 +699,13 @@ views.team = n => {
   const form = h("form", { class: "card", onsubmit: async e => {
     e.preventDefault();
     if (!d.rating) { msg.textContent = "Pick a star rating."; return; }
-    form.querySelector("button[type=submit]").disabled = true;
-    try {
-      await addDoc(collection(db, "scouting"), { team: n, event: String(d.event || ""), match: d.match.trim().slice(0, 20), autoPins: Number(d.autoPins) || 0,
-        auto: d.auto, rating: d.rating, notes: d.notes.trim().slice(0, 1000), game: G.key, by: user.uid, nickname: S.nickname, at: serverTimestamp() });
-      draft[n] = null; render();
-    } catch (err) { msg.textContent = `Couldn't save: ${err.code || err.message}`; form.querySelector("button[type=submit]").disabled = false; }
+    // Saved on the phone first and sent when there's a connection: event Wi-Fi drops all the
+    // time, so this doesn't wait for the server (Firestore keeps the write until it goes through).
+    setDoc(doc(collection(db, "scouting")), { team: n, event: String(d.event || ""), match: d.match.trim().slice(0, 20), autoPins: Number(d.autoPins) || 0,
+      auto: d.auto, rating: d.rating, notes: d.notes.trim().slice(0, 1000), game: G.key, by: user.uid, nickname: S.nickname, at: serverTimestamp() })
+      .catch(err => toast(`A note on ${n} couldn't be saved (${err.code || err.message}).`, "bad"));
+    toast(navigator.onLine ? `Note on ${n} saved` : `Saved on this phone. It sends when you're back online.`);
+    draft[n] = null; render();
   } },
     h("h3", {}, `Scout ${n}`),
     h("div", { class: "grid2", style: "align-items:end" },
@@ -634,7 +720,8 @@ views.team = n => {
   right.push(form);
   if (!open && sc.length) right.push(areaGate("Our scouting", `${sc.length} note${sc.length === 1 ? "" : "s"} on ${n} from the team.`, { focus: false }));
   else if (sc.length) right.push(section(`Our scouting · ★ ${avg.toFixed(1)}`), group(...sc.map(x => h("div", { class: "note" },
-    h("div", { class: "meta" }, h("b", {}, x.nickname), h("span", { class: "muted small" }, [x.match, ago(x.at)].filter(Boolean).join(" · "))),
+    h("div", { class: "meta" }, h("b", {}, x.nickname), h("span", { class: "muted small" }, [x.match, ago(x.at)].filter(Boolean).join(" · ")),
+      x.pending ? h("span", { class: "pill waiting", title: "Saved on this phone; sends when there's a connection" }, "Waiting to send") : null),
     h("span", { class: "starline", "aria-label": `${x.rating} of 5 stars` }, "★".repeat(x.rating) + "☆".repeat(5 - x.rating)),
     x.auto || x.autoPins ? h("span", { class: "small muted" }, [x.auto, x.autoPins ? `${x.autoPins} auto ${PIECE}s` : ""].filter(Boolean).join(" · ")) : null,
     x.notes ? h("p", {}, x.notes) : null,
@@ -1127,7 +1214,8 @@ function pitStatus(fe, ev, next) {
   if (!isLive(fe)) return ms(fe.start) > Date.now() ? [`Next event ${until(fe.start)}`, fmtDates(fe)] : ["Event finished", fmtDates(fe)];
   if (!ev?.matches?.length) return ["At the event", "Waiting for the match list"];
   if (next) {
-    const mins = (ms(next.m.scheduled) - Date.now()) / 60e3;
+    const mins = (ms(next.m.scheduled) - Date.now()) / 60e3, q = queueState(ev);
+    if (q?.due && mins > -2) return ["Queue now", `${shortName(next.m.name)} on ${next.m.field || "the field"}`];
     if (!Number.isFinite(mins)) return ["Up next", shortName(next.m.name)];
     if (mins > 10) return ["Next match", `${shortName(next.m.name)} ${until(next.m.scheduled)}`];
     if (mins > -2) return ["Queue now", `${shortName(next.m.name)} on ${next.m.field || "the field"}`];
@@ -1211,8 +1299,343 @@ views.pit = () => {
     relock, h("p", { class: "pit-foot" }, live || S.status?.alwaysOn ? `${G.name}${live ? " · live" : ""} · results checked every ${checkEvery(live)} · last change ${ago(ev?.updatedAt)}` : `${G.name} ${G.years} · updated ${ago(S.status?.lastQuick || S.status?.lastFull)}`), controls];
 };
 
+// ---- "Queue now" alerts. Our next match is due when it's at most QUEUE.ahead matches away in
+// our division, or QUEUE.minutes from its scheduled time (same rule as sync/alerts.mjs, which
+// sends the phone notifications). In the app: a banner on every page, plus a chime and a buzz once.
+const QUEUE = { ahead: 3, minutes: 10 };
+function queueState(ev) {
+  if (!ev?.matches) return null;
+  const next = ev.matches.find(m => !m.scored && (m.red.teams.includes(us()) || m.blue.teams.includes(us())));
+  if (!next) return null;
+  const same = ev.matches.filter(m => m.div === next.div && m.round === next.round);
+  const ahead = same.slice(0, same.indexOf(next)).filter(m => !m.scored).length;
+  const mins = (ms(next.scheduled) - Date.now()) / 60e3;
+  return { next, ahead, mins, due: ahead <= QUEUE.ahead || (Number.isFinite(mins) && mins <= QUEUE.minutes) };
+}
+let alertAudio = null;
+// Phones only play sound after a tap, so get the alertAudio ready on the first one.
+addEventListener("pointerdown", () => { try { alertAudio ||= new (window.AudioContext || window.webkitAudioContext)(); alertAudio.resume?.(); } catch {} }, { once: true, capture: true });
+function chime() {
+  try {
+    if (!alertAudio) return;
+    [0, 0.22, 0.44].forEach((t, i) => {
+      const o = alertAudio.createOscillator(), g = alertAudio.createGain(), at = alertAudio.currentTime + t;
+      o.frequency.value = [880, 1175, 1568][i]; o.type = "sine";
+      g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(0.35, at + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, at + 0.35);
+      o.connect(g).connect(alertAudio.destination); o.start(at); o.stop(at + 0.4);
+    });
+  } catch {}
+}
+/** The banner for the top of every page while our next match is due (and the chime, once). */
+function queueBanner() {
+  const fe = S.status ? focusEvent() : null, ev = fe && isLive(fe) && S.events[fe.id];
+  const q = ev && queueState(ev);
+  if (!q?.due) return null;
+  const m = q.next, color = m.red.teams.includes(us()) ? "red" : "blue", other = color === "red" ? "blue" : "red";
+  const told = store.get("queueTold", []);
+  if (!told.includes(m.id) && store.get("inAppAlerts", true)) {
+    store.set("queueTold", [...told.slice(-40), m.id]);
+    chime(); navigator.vibrate?.([300, 120, 300, 120, 300]);
+  }
+  const partners = m[color].teams.filter(t => t !== us());
+  return h("a", { class: `queue ${color}`, href: `#/match/${fe.id}/${m.id}`, role: "alert" },
+    h("span", { class: "qicon", "aria-hidden": "true" }, icon("bell")),
+    h("span", { class: "tx" }, h("b", {}, `Queue now · ${shortName(m.name)}`),
+      h("span", {}, [`${color === "red" ? "Red" : "Blue"}${partners.length ? ` with ${partners.join(", ")}` : ""} vs ${m[other].teams.join(", ")}`, m.field,
+        q.ahead ? `${q.ahead} match${q.ahead === 1 ? "" : "es"} before ours` : "We're next"].filter(Boolean).join(" · "))),
+    icon("chev", "chev"));
+}
+
+// ---- phone notifications for queue alerts (Web Push; the sync job sends them)
+const pushSupported = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window && location.protocol === "https:";
+const isIOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const installed = () => matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const b64ToBytes = b64 => { const s = atob((b64 + "=".repeat((4 - (b64.length % 4)) % 4)).replace(/-/g, "+").replace(/_/g, "/")); return Uint8Array.from(s, c => c.charCodeAt(0)); };
+let pushBusy = false, pushMsg = "";
+async function pushOn() {
+  pushBusy = true; pushMsg = ""; render();
+  try {
+    if (await Notification.requestPermission() !== "granted") throw new Error("Notifications are blocked for Scout. Allow them in your phone's settings, then try again.");
+    const key = (await getDoc(doc(db, "meta", "push"))).data()?.publicKey;
+    if (!key) throw new Error("Alerts aren't ready yet: the sync sets them up the next time it runs.");
+    const reg = await navigator.serviceWorker.ready;
+    const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(key) });
+    const j = sub.toJSON(), id = (await sha256(j.endpoint)).slice(0, 40);
+    await setDoc(doc(db, "pushSubs", id), { by: user.uid, endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth, at: serverTimestamp() });
+    store.set("pushSub", id);
+    reg.showNotification("Match alerts are on", { body: "You'll get a notification like this when it's time to queue.", icon: "icon-180.png", tag: "push-on" });
+  } catch (err) { pushMsg = err.message; }
+  pushBusy = false; render();
+}
+async function pushOff() {
+  pushBusy = true; render();
+  try {
+    const reg = await navigator.serviceWorker.ready, sub = await reg.pushManager.getSubscription();
+    const id = store.get("pushSub", null) || (sub && (await sha256(sub.endpoint)).slice(0, 40));
+    if (id) await deleteDoc(doc(db, "pushSubs", id)).catch(() => {});
+    await sub?.unsubscribe();
+  } catch {}
+  store.set("pushSub", null); pushBusy = false; render();
+}
+function alertsSection() {
+  const on = !!store.get("pushSub", null) && pushSupported() && Notification.permission === "granted";
+  const phone = !pushSupported()
+    ? lrow({ info: true, ic: "bell", title: "Phone notifications", sub: isIOS && !installed() ? "On iPhone and iPad: Share → Add to Home Screen, then open Scout from there to turn these on." : "This browser can't get notifications. Try Chrome or Safari, or the Home Screen app." })
+    : lrow({ info: true, ic: "bell", title: "Phone notifications", sub: pushMsg || (on ? "On for this device, even with the app closed" : "Off for this device"),
+      trail: h("button", { type: "button", class: `btn small${on ? "" : " primary"}`, disabled: pushBusy, onclick: on ? pushOff : pushOn }, pushBusy ? "…" : on ? "Turn off" : "Turn on") });
+  return [section("Match alerts"),
+    group(phone,
+      lrow({ info: true, ic: "bell", title: "In the app", sub: "Banner, chime and buzz while Scout is open",
+        trail: seg([["on", "On"], ["off", "Off"]], store.get("inAppAlerts", true) ? "on" : "off", v => { store.set("inAppAlerts", v === "on"); if (v === "on") chime(); render(); }, "mini") })),
+    h("p", { class: "footnote" }, `"Queue now" goes off once per match, when ours is ${QUEUE.ahead} matches away or ${QUEUE.minutes} minutes from its scheduled time.`)];
+}
+
+// ---- small messages at the bottom ("Note saved"), and the offline bar
+function toast(text, kind = "") {
+  document.querySelector(".toast")?.remove();
+  const t = h("div", { class: `toast ${kind}`, role: "status" }, text);
+  document.body.append(t);
+  setTimeout(() => { t.classList.add("gone"); setTimeout(() => t.remove(), 300); }, 3200);
+}
+addEventListener("online", () => { toast("Back online. Saved notes are sending."); refresh(); });
+addEventListener("offline", () => refresh());
+const offlineBar = () => navigator.onLine ? null : h("div", { class: "offline", role: "status" }, icon("wifi"), h("span", {}, h("b", {}, "Offline. "), "Showing saved data; scouting notes save on this phone and send when you're back."));
+
+// ---------------------------------------------------------------- AI: Ask Scout (chat) and Scout for me
+// Both are jobs in aiJobs that the sync job answers with Claude (sync/assist.mjs), within the
+// team's daily budget (meta/ai). The chat keeps its history on this phone.
+const aiReady = () => S.ai?.enabled;
+const aiLeft = () => S.ai && S.ai.day === new Date().toLocaleDateString("en-CA", { timeZone: "America/Toronto" }) ? Math.max(0, (S.ai.cap || 50) - (S.ai.usd || 0)) : S.ai?.cap || 50;
+const money = x => `$${x < 10 ? x.toFixed(2) : x.toFixed(0)}`;
+function aiSection() {
+  if (!S.ai) return [];
+  const today = S.ai.day === new Date().toLocaleDateString("en-CA", { timeZone: "America/Toronto" });
+  const mine = today ? S.ai.people?.[user.uid] || 0 : 0;
+  return [section("AI"),
+    group(lrow({ info: true, ic: "scout", title: S.ai.enabled ? "Ask Scout and Scout for me" : "AI isn't set up", sub: S.ai.enabled
+      ? `Team today: ${money(today ? S.ai.usd || 0 : 0)} of ${money(S.ai.cap || 50)} · You: ${money(mine)} of ${money(S.ai.perPerson || 15)}`
+      : "An admin adds the ANTHROPIC_API_KEY secret on GitHub to turn it on." })),
+    h("p", { class: "footnote" }, "Uses Claude (Anthropic). The daily budget resets at midnight Toronto time and covers everyone, including the nightly AI team notes.")];
+}
+
+/** Light formatting for AI answers: paragraphs, "- " lists, **bold** and team numbers as links. Never HTML. */
+function richText(text) {
+  const inline = line => {
+    const out = [];
+    for (const part of String(line).split(/(\*\*[^*]+\*\*)/)) {
+      if (/^\*\*[^*]+\*\*$/.test(part)) { out.push(h("b", {}, part.slice(2, -2))); continue; }
+      let last = 0;
+      for (const m of part.matchAll(/\b(\d{1,6}[A-Z])\b/g)) {
+        out.push(part.slice(last, m.index), h("a", { href: teamHref(m[1]) }, m[1]));
+        last = m.index + m[1].length;
+      }
+      out.push(part.slice(last));
+    }
+    return out;
+  };
+  const blocks = [];
+  let list = null;
+  for (const raw of String(text).split("\n")) {
+    const line = raw.trim();
+    const item = line.match(/^(?:[-*•]|\d+[.)])\s+(.*)/);
+    if (item) { if (!list) blocks.push(list = h("ul", {})); list.append(h("li", {}, inline(item[1]))); continue; }
+    list = null;
+    if (line) blocks.push(h("p", {}, inline(line.replace(/^#+\s*/, ""))));
+  }
+  return blocks;
+}
+
+const chatKey = `chat.${G.key}`;
+let chat = store.get(chatKey, []), chatJob = null, chatUnsub = null, chatStep = "";
+function chatButton(name) {
+  let b = document.querySelector(".chatfab");
+  const hide = IMMERSIVE.has(name) || document.querySelector(".chatpanel");
+  if (hide) { b?.remove(); return; }
+  if (!b) document.body.append(b = h("button", { type: "button", class: "chatfab", "aria-label": "Ask Scout (AI chat)", onclick: () => openChat() }, icon("chat"), h("span", {}, "Ask")));
+}
+function closeChat() {
+  const p = document.querySelector(".chatpanel"), bg = document.querySelector(".chat-bg");
+  if (!p) return;
+  p.classList.add("closing"); bg?.classList.add("closing");
+  setTimeout(() => { p.remove(); bg?.remove(); chatButton(lastName); }, calm.matches ? 0 : 180);
+}
+function openChat(prefill = "") {
+  if (document.querySelector(".chatpanel")) return;
+  document.querySelector(".chatfab")?.remove();
+  const list = h("div", { class: "chatlog", "aria-live": "polite" });
+  const input = h("textarea", { rows: 1, placeholder: "Ask about a team, an event, or who to pick", "aria-label": "Message", maxlength: 1500,
+    oninput: () => { input.style.height = "auto"; input.style.height = `${Math.min(140, input.scrollHeight)}px`; },
+    onkeydown: e => { if (e.key === "Enter" && !e.shiftKey && matchMedia("(hover: hover)").matches) { e.preventDefault(); send(); } } }, prefill);
+  const sendBtn = h("button", { type: "submit", class: "btn primary send", "aria-label": "Send" }, icon("send"));
+  const form = h("form", { class: "chatinput", onsubmit: e => { e.preventDefault(); send(); } }, input, sendBtn);
+  const draw = () => {
+    const kids = [];
+    if (!chat.length) kids.push(h("div", { class: "chathello" }, h("span", { class: "gate-icon", "aria-hidden": "true" }, icon("scout")),
+      h("b", {}, "Ask Scout"), h("p", { class: "muted small" }, `Questions about teams, events, rankings and picks, answered from live VEX Events data (${G.name}).`),
+      h("div", { class: "chips" }, ["What's our next match and our chances?", "Who are the strongest teams at our next event?", "How did 16610V do last season?", "Who would make a good alliance partner for us?"]
+        .map(q => h("button", { type: "button", onclick: () => { input.value = q; send(); } }, q)))));
+    for (const m of chat) kids.push(h("div", { class: `msg ${m.role}${m.error ? " error" : ""}` }, m.role === "assistant" ? richText(m.text) : h("p", {}, m.text)));
+    if (chatJob) kids.push(h("div", { class: "msg assistant typing" }, h("span", { class: "dots", "aria-hidden": "true" }, h("i"), h("i"), h("i")), h("span", { class: "muted small" }, chatStep || "Thinking…")));
+    if (S.ai && !aiReady()) kids.push(h("p", { class: "footnote" }, "AI isn't set up yet: an admin adds the ANTHROPIC_API_KEY secret on GitHub."));
+    list.replaceChildren(...kids);
+    sendBtn.disabled = !!chatJob;
+    list.scrollTop = list.scrollHeight;
+  };
+  async function send() {
+    const text = input.value.trim();
+    if (!text || chatJob) return;
+    if (!navigator.onLine) { toast("You're offline. Ask again when you're connected.", "bad"); return; }
+    chat.push({ role: "user", text }); input.value = ""; input.style.height = "auto";
+    chat = chat.slice(-30); store.set(chatKey, chat);
+    chatStep = "Sending…"; chatJob = "…"; draw();
+    try {
+      const ref = await addDoc(collection(db, "aiJobs"), { kind: "chat", by: user.uid, nickname: S.nickname, at: serverTimestamp(), game: G.key, status: "new",
+        messages: chat.filter(m => !m.error).slice(-12).map(m => ({ role: m.role, text: m.text.slice(0, 2000) })), open: areasOpen() });
+      chatJob = ref.id; chatStep = "Waiting for Scout…"; draw();
+      const timer = setTimeout(() => { if (chatJob === ref.id) { chatStep = "Still waiting. Scout answers while the sync is running."; draw(); } }, 25e3);
+      chatUnsub?.();
+      chatUnsub = onSnapshot(ref, snap => {
+        const j = snap.data();
+        if (!j) return;
+        if (j.step) chatStep = j.step;
+        if (j.status === "done" || j.status === "error") {
+          clearTimeout(timer); chatUnsub?.(); chatUnsub = null; chatJob = null;
+          chat.push(j.status === "done" ? { role: "assistant", text: j.answer || "" } : { role: "assistant", text: j.error || "Something went wrong.", error: true });
+          store.set(chatKey, chat.slice(-30));
+          deleteDoc(ref).catch(() => {});
+        }
+        if (document.querySelector(".chatpanel")) draw();
+      });
+    } catch (err) { chatJob = null; chat.push({ role: "assistant", text: `Couldn't send: ${err.code || err.message}`, error: true }); draw(); }
+  }
+  const bg = h("div", { class: "chat-bg", onclick: () => closeChat() });
+  const panel = h("div", { class: "chatpanel", role: "dialog", "aria-modal": "true", "aria-label": "Ask Scout" },
+    h("div", { class: "head" },
+      h("div", { class: "who" }, h("span", { class: "avatar", "aria-hidden": "true" }, icon("scout")), h("span", {}, h("b", {}, "Ask Scout"), h("span", { class: "muted small" }, `AI · ${G.name}`))),
+      h("div", { class: "row" },
+        h("button", { type: "button", class: "btn small plain", onclick: () => { if (chatJob) return; chat = []; store.set(chatKey, []); draw(); } }, "New chat"),
+        h("button", { type: "button", class: "btn small plain icon-only", "aria-label": "Close", onclick: () => closeChat() }, icon("close")))),
+    list, form,
+    h("p", { class: "chatfoot" }, "AI can be wrong. Check anything important on VEX Events."));
+  panel.addEventListener("keydown", e => { if (e.key === "Escape") closeChat(); });
+  document.body.append(bg, panel);
+  draw();
+  if (matchMedia("(hover: hover)").matches) input.focus();
+}
+addEventListener("hashchange", () => { if (document.querySelector(".chatpanel") && matchMedia("(max-width: 899px)").matches) closeChat(); });
+
+// ---- Scout for me: pick an event, the sync scouts every team there (sync/assist.mjs report()).
+let scoutQuery = "", reportTier = "All", reportOpen = new Set();
+const watchReports = () => watch("reports", query(collection(db, "reports"), orderBy("startedAt", "desc"), limit(40)), s => {
+  S.reportList = s.docs.map(d => ({ id: d.id, ...d.data() })).filter(r => r.id.startsWith(`${G.key}-`));
+});
+const watchReport = id => watch(`r${id}`, doc(db, "reports", `${G.key}-${id}`), s => { S.reports[id] = s.exists() ? s.data({ serverTimestamps: "estimate" }) : null; });
+const asking = {}; // event id -> job id, while waiting for the sync to start a report
+async function scoutEvent(id) {
+  if (!navigator.onLine) { toast("You're offline. Try again when you're connected.", "bad"); return; }
+  asking[id] = "…"; render();
+  try {
+    const ref = await addDoc(collection(db, "aiJobs"), { kind: "report", event: String(id), by: user.uid, nickname: S.nickname, at: serverTimestamp(), game: G.key, status: "new" });
+    asking[id] = ref.id;
+    const un = onSnapshot(ref, snap => {
+      const j = snap.data();
+      if (!j || j.status === "new") return;
+      un(); delete asking[id];
+      if (j.status === "error" && !S.reports[id]) toast(j.error || "Couldn't start the report.", "bad");
+      deleteDoc(ref).catch(() => {});
+      refresh();
+    });
+  } catch (err) { delete asking[id]; toast(`Couldn't start: ${err.code || err.message}`, "bad"); }
+}
+views.scout = id => id ? scoutReport(id) : scoutHome();
+function scoutHome() {
+  loadIndex("events");
+  watchReports();
+  const list = group(), count = h("p", { class: "footnote", style: "margin-top:0" });
+  const drawList = () => {
+    const q = scoutQuery.trim().toLowerCase();
+    let items;
+    if (q) items = (S.index.events || []).filter(e => `${e.name} ${e.sku} ${e.city} ${e.region} ${e.country}`.toLowerCase().includes(q)).slice(0, 30);
+    else items = ourEvents().filter(e => ms(e.end || e.start) >= Date.now() - DAY);
+    list.replaceChildren(...items.map(e => lrow({ href: `#/scout/${e.id}`, title: e.name, sub: [fmtDates(e), where_(e)].filter(Boolean).join(" · "), trail: isLive(e) ? h("span", { class: "pill live" }, "Live") : "" })));
+    if (!items.length) list.append(h("p", { class: "empty" }, q ? (S.index.events?.length ? "No events match." : "Loading events…") : "No upcoming events of ours. Search for any event."));
+    count.textContent = q ? "" : "Our upcoming events. Search to scout any event.";
+  };
+  drawList();
+  const done = (S.reportList || []).filter(r => r.event);
+  return [pagehead("Scout for me", "Pick an event. Scout looks at every team there: this season and Push Back, a chart for each, write-ups and a ranked pick list."),
+    !aiReady() && S.ai !== undefined ? notice("Reports still rank every team with charts. Write-ups and the overview need AI: an admin adds the ANTHROPIC_API_KEY secret on GitHub.", "AI isn't set up", "scout") : null,
+    searchBox("Find an event: name, city or code", scoutQuery, e => { scoutQuery = e.target.value; drawList(); }), list, count,
+    done.length ? section("Reports") : null,
+    done.length ? group(...done.map(r => lrow({ href: `#/scout/${r.event.id}`, ic: "scout", title: r.event.name,
+      sub: r.status === "working" ? r.step || "Working…" : r.status === "error" ? r.error : `${r.count || r.teams?.length || 0} teams · by ${r.by || "someone"} · ${ago(r.doneAt)}`,
+      trail: r.status === "working" ? h("span", { class: "pill live" }, "Working") : "" }))) : null];
+}
+const tierClass = t => (t === "First pick" ? "t1" : t === "Second pick" ? "t2" : "t3");
+function scoutReport(id) {
+  watchReport(id);
+  loadIndex("events");
+  const r = S.reports[id];
+  const e = r?.event || S.index.events?.find(x => String(x.id) === String(id)) || ourEvents().find(x => String(x.id) === String(id));
+  const head = pagehead(e?.name || `Event ${id}`, e ? [fmtDates(e), where_(e)].filter(Boolean).join(" · ") : "");
+  const waiting = asking[id];
+  if (r === undefined && !waiting) return [head, ...skeleton(120, 300)];
+  if (!r || r.status === "error") {
+    return [head, h("div", { class: "notice" }, icon("scout"), h("b", {}, r?.status === "error" ? "That didn't work" : waiting ? "Asking Scout…" : "Scout this event"),
+      h("span", {}, r?.status === "error" ? r.error : "Scout loads every team's season (and last season, Push Back), charts each one, ranks them into a pick list and writes them up. Big events take a few minutes."),
+      h("button", { class: "btn primary", disabled: !!waiting, onclick: () => scoutEvent(id) }, icon("scout"), waiting ? "Starting…" : r ? "Try again" : "Scout this event"))];
+  }
+  if (r.status === "working") {
+    return [head, h("div", { class: "card working" }, h("span", { class: "spinner", "aria-hidden": "true" }),
+      h("div", {}, h("b", {}, "Scouting…"), h("p", { class: "muted small" }, r.step || "Starting"),
+        h("p", { class: "muted small" }, `Started ${ago(r.startedAt)}${r.by ? ` by ${r.by}` : ""}. You can leave this page; it keeps going.`)))];
+  }
+  const tiers = ["All", "First pick", "Second pick", "Depth"];
+  const teams = r.teams.filter(t => reportTier === "All" || t.tier === reportTier);
+  const A = r.ai;
+  const chipTeams = (title, xs) => xs?.length ? h("div", { class: "pickchips" }, h("span", { class: "eyebrow" }, title), h("div", { class: "row" }, xs.map(n => h("a", { class: `tn${n === us() ? " us" : ""}`, href: teamHref(n) }, n)))) : null;
+  const out = [head,
+    h("p", { class: "muted small", style: "margin:-6px 0 4px" }, `${r.teams.length} teams · by ${r.by || "someone"} · ${ago(r.doneAt)} · `,
+      h("button", { type: "button", class: "linkbtn", disabled: !!waiting, onclick: () => scoutEvent(id) }, waiting ? "Starting…" : "Run again"))];
+  if (A) out.push(card(h("span", { class: "eyebrow" }, "Overview"), ...richText(A.overview), chipTeams("First picks", A.firstPicks), chipTeams("Sleepers", A.sleepers), chipTeams("Careful", A.avoid),
+    A.plan ? h("div", { class: "notepara" }, h("span", { class: "eyebrow" }, "Our plan"), h("p", {}, A.plan)) : null));
+  else if (r.aiNote) out.push(notice(r.aiNote, "No write-ups this time", "scout"));
+  const ourRow = r.teams.find(t => t.number === us());
+  if (ourRow) out.push(h("p", { class: "footnote" }, `We're #${ourRow.rank} of ${r.teams.length} on this list.`));
+  out.push(h("div", { class: "chips" }, tiers.map(t => h("button", { type: "button", "aria-pressed": String(t === reportTier), onclick: () => { reportTier = t; render(); } }, t))));
+  out.push(h("div", { class: "picklist" }, teams.map(t => {
+    const open = reportOpen.has(t.number);
+    const toggle = () => { open ? reportOpen.delete(t.number) : reportOpen.add(t.number); render(); };
+    const rec = t.season ? `${t.season.wins}-${t.season.losses}-${t.season.ties}` : "no results";
+    const row = h("button", { type: "button", class: `pick${t.number === us() ? " us" : ""}`, "aria-expanded": String(open), onclick: toggle },
+      h("span", { class: "rk" }, t.rank), badge(t.number),
+      h("span", { class: "tx" }, h("b", {}, t.name || t.number), h("span", {}, [t.number, rec, t.ai?.pick && t.ai.pick !== "maybe" ? t.ai.pick : null].filter(Boolean).join(" · "))),
+      radarChart([{ p: t.profile, cls: "now" }], { small: true }),
+      h("span", { class: `tier ${tierClass(t.tier)}` }, t.tier.replace(" pick", "")));
+    if (!open) return h("div", { class: "pickwrap" }, row);
+    const T = t.ai, list = (title, xs) => xs?.length ? h("div", {}, h("span", { class: "eyebrow" }, title), h("ul", {}, xs.map(x => h("li", {}, x)))) : null;
+    const pb = t.pbSeason;
+    return h("div", { class: "pickwrap open" }, row, h("div", { class: "pickbody" },
+      h("div", { class: "pickchart" }, radarChart([{ p: t.profile, cls: "now" }, ...(t.pushback ? [{ p: t.pushback, cls: "past" }] : [])]),
+        h("div", { class: "legend" }, h("span", {}, h("i", { class: "lg-now" }), G.name), t.pushback ? h("span", {}, h("i", { class: "lg-past" }), "Push Back") : null)),
+      h("div", { class: "pickinfo" },
+        T ? h("p", {}, T.summary) : null,
+        T ? h("div", { class: "bullets" }, list("Strengths", T.strengths), list("Weaknesses", T.weaknesses)) : null,
+        T?.why ? h("div", { class: "notepara" }, h("span", { class: "eyebrow" }, `Call: ${T.pick}`), h("p", {}, T.why)) : null,
+        glance([[rec, "Season"], [t.season?.bestRank ? `#${t.season.bestRank}` : "–", "Best rank"], [t.season ? t.season.bestDriver + t.season.bestProg : "–", "Best skills"],
+          [t.here ? `#${t.here.rank}` : "–", "Rank here"]]),
+        h("div", { class: "notepara" }, h("span", { class: "eyebrow" }, "Push Back season"),
+          h("p", {}, T?.lastSeason || (pb ? `${pb.wins}-${pb.losses}-${pb.ties} over ${pb.events} event${pb.events === 1 ? "" : "s"}${pb.bestRank ? `, best rank #${pb.bestRank}` : ""}, best skills ${pb.bestDriver + pb.bestProg}.` : "No Push Back results."))),
+        h("a", { class: "btn small", href: teamHref(t.number) }, "Open team", icon("chev")))));
+  })));
+  out.push(h("p", { class: "footnote" }, "Order: a weighted score of the six corners (scoring, win rate, autonomous, driving, consistency, placement), as percentiles against every team this season. Tap a team for its chart and write-up."));
+  return out;
+}
+
 views.more = () => [pagehead("More"),
   group(
+    lrow({ href: "#/autos", ic: "autos", title: "Autos", sub: "Our autonomous routes" }),
+    lrow({ ic: "chat", title: "Ask Scout", sub: "AI chat about teams, events and picks", onclick: () => openChat() }),
     lrow({ href: "#/checklist", ic: "checklist", title: "Checklist", sub: "Before each match, packing list, your own" }),
     lrow({ href: "#/scorer", ic: "scorer", title: "Scorer", sub: "Match timer and score counter" }),
     lrow({ href: "#/predict", ic: "predict", title: "Predictor", sub: "Win chance for any four teams" }),
@@ -1254,7 +1677,9 @@ views.settings = () => {
       location.hash = "#/"; location.reload();
     }),
     h("p", { class: "footnote" }, "Events, teams, rankings, the scorer and the whiteboard all follow the game. Push Back is last season's, for looking back. Saved on this device."),
+    ...alertsSection(),
     ...(S.admin ? adminSection() : []),
+    ...aiSection(),
     section("Locked areas"),
     group(lrow({ info: true, ic: "lock", title: "Autos, Whiteboard, scouting notes", sub: areasOpen() ? `Open on this device until ${fmtTime(new Date(store.get("areasOpenUntil", 0)).toISOString())}` : "Locked: they ask for the team code",
       trail: areasOpen() ? h("button", { type: "button", class: "btn small", onclick: lockAreas }, "Lock now") : "" })),
@@ -1276,15 +1701,15 @@ views.settings = () => {
 // ---------------------------------------------------------------- shell
 
 // Five tabs on phones; the sidebar on wide screens lists everything.
-const NAV = [["home", "Home", ""], ["events", "Events", "events"], ["teams", "Teams", "teams"], ["autos", "Autos", "autos"], ["more", "More", "more"]];
-const NAV_WIDE = [["home", "Home", ""], ["events", "Events", "events"], ["teams", "Teams", "teams"], ["autos", "Autos", "autos"], ["checklist", "Checklist", "checklist"],
+const NAV = [["home", "Home", ""], ["events", "Events", "events"], ["teams", "Teams", "teams"], ["scout", "Scout", "scout"], ["more", "More", "more"]];
+const NAV_WIDE = [["home", "Home", ""], ["events", "Events", "events"], ["teams", "Teams", "teams"], ["scout", "Scout for me", "scout"], ["autos", "Autos", "autos"], ["checklist", "Checklist", "checklist"],
   ["scorer", "Scorer", "scorer"], ["predict", "Predictor", "predict"], ["board", "Whiteboard", "board"], ["pit", "Pit display", "pit"], ["settings", "Settings", "settings"]];
-const TAB_OF = { event: "events", match: "events", team: "teams", checklist: "more", scorer: "more", predict: "more", settings: "more", board: "more", pit: "more" };
+const TAB_OF = { event: "events", match: "events", team: "teams", autos: "more", checklist: "more", scorer: "more", predict: "more", settings: "more", board: "more", pit: "more" };
 const BACK = { event: ["Events", "#/events"], match: ["Back"], team: ["Back"], checklist: ["More", "#/more"], scorer: ["More", "#/more"], predict: ["More", "#/more"], settings: ["More", "#/more"] };
 const wide = matchMedia("(min-width: 900px)");
 let lastRoute = "", titleObs = null;
 // How deep each page sits, so moving deeper slides in from the right and Back slides the other way.
-const DEPTH = { home: 0, events: 0, teams: 0, autos: 0, more: 0, event: 1, checklist: 1, scorer: 1, predict: 1, settings: 1, board: 1, pit: 1, match: 2, team: 2 };
+const DEPTH = { home: 0, events: 0, teams: 0, autos: 0, scout: 0, more: 0, event: 1, checklist: 1, scorer: 1, predict: 1, settings: 1, board: 1, pit: 1, match: 2, team: 2 };
 const calm = matchMedia("(prefers-reduced-motion: reduce)");
 let lastName = "", lastDepth = 0, drawn = false, moving = null;
 /** Runs `change` as an animated transition (View Transitions where the browser has them). */
@@ -1306,7 +1731,7 @@ function render() {
   const route = parts.join("/");
   const fresh = route !== lastRoute;
   // Only real navigation animates; live data redraws (every few seconds at events) stay still.
-  const depth = name === "autos" && parts[1] ? 1 : DEPTH[name] ?? 0;
+  const depth = (name === "autos" || name === "scout") && parts[1] ? 1 : DEPTH[name] ?? 0;
   if (!fresh || !drawn) { drawn = true; lastRoute = route; lastName = name; lastDepth = depth; draw(parts, name, fresh); return; }
   const from = lastDepth, to = depth;
   const kind = name === lastName && to === from ? "swap" : to > from ? "forward" : to < from ? "back" : "tab";
@@ -1321,6 +1746,7 @@ function draw(parts, name, fresh) {
     // Whiteboard and pit display fill the screen: no top bar or tab bar.
     document.body.classList.remove("has-nav");
     root.replaceChildren(h("main", { class: `immersive page-${name}` }, views[name](...parts.slice(1))));
+    chatButton(name);
     fitBadges(root);
     if (name === "pit") fitPit();
     if (fresh) scrollTo(0, 0);
@@ -1329,15 +1755,15 @@ function draw(parts, name, fresh) {
   document.body.classList.add("has-nav");
   const isWide = wide.matches;
   const tab = TAB_OF[name] || name;
-  const sub = name === "autos" ? !!parts[1] : isWide ? ["event", "match", "team"].includes(name) : !!BACK[name];
-  const [backLabel, backHref] = name === "autos" ? ["Autos", "#/autos"] : BACK[name] || ["Back"];
+  const sub = name === "autos" || name === "scout" ? !!parts[1] : isWide ? ["event", "match", "team"].includes(name) : !!BACK[name];
+  const [backLabel, backHref] = name === "autos" ? ["Autos", "#/autos"] : name === "scout" ? ["Scout", "#/scout"] : BACK[name] || ["Back"];
   const content = views[name](...parts.slice(1));
   const head = h("header", { class: "top" },
     h("div", { class: "left" }, sub ? h("button", { class: "back", onclick: () => { if (backHref) location.hash = backHref; else if (history.length > 1) history.back(); else location.hash = "#/"; } }, icon("back"), h("span", {}, backLabel)) : null),
     h("span", { class: "title" }, ""),
     h("div", { class: "right" }, name === "autos" && areasOpen() ? seg([["red", "Red"], ["blue", "Blue"]], side, v => { side = v; store.set("alliance", v); render(); }, "red-blue") : null));
   const current = k => isWide ? (k === name || (k === "events" && ["event", "match"].includes(name)) || (k === "teams" && name === "team")) : k === tab;
-  root.replaceChildren(head, h("main", {}, content),
+  root.replaceChildren(head, h("main", {}, offlineBar(), queueBanner(), content),
     h("nav", { class: "bottom", "aria-label": "Main" }, isWide ? h("div", { class: "navbrand" }, h("b", {}, us()), h("span", {}, "Scout")) : null, (isWide ? NAV_WIDE : NAV).map(([k, label, path]) => h("a", { href: `#/${path}`, "aria-current": current(k) ? "page" : null }, icon(k), label))));
   const big = root.querySelector("main h1");
   head.querySelector(".title").textContent = big?.textContent || "";
@@ -1348,6 +1774,7 @@ function draw(parts, name, fresh) {
     titleObs.observe(big);
   }
   fitBadges(root);
+  chatButton(name);
   scrollTo(0, y);
   head.classList.toggle("scrolled", scrollY > 4);
 }

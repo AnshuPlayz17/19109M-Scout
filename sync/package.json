@@ -3,13 +3,16 @@
   "private": true,
   "type": "module",
   "description": "Pulls RobotEvents data into the 19109M scouting app's Firestore database.",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "sync": "node sync.mjs",
     "test": "node test.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.1.0",
-    "firebase-admin": "^14.4.0"
+    "firebase-admin": "^14.4.0",
+    "web-push": "^3.6.7"
   }
 }

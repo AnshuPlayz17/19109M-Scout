@@ -68,3 +68,28 @@ console.log("all model tests passed");
   assert.equal(liveNow(local, Date.parse("2026-11-15T09:00:00-05:00")), false);
   console.log("ok  live hours follow the event's time zone");
 }
+
+// ---------- Hexagon chart percentiles and the queue rule ----------
+{
+  const { rawAxes, buildScales, profile, pickScore } = await import("../web/profile.js");
+  const mk = (w, l, avgs, prog, drv) => ({ wins: w, losses: l, ties: 0, bestProg: prog, bestDriver: drv,
+    rankings: avgs.map((a, i) => ({ rank: 3 + i, wins: Math.round(w / avgs.length), losses: Math.round(l / avgs.length), ties: 0, avg: a })) });
+  const field = Array.from({ length: 50 }, (_, i) => mk(i % 10, 10 - (i % 10), [20 + i, 25 + i], i, 2 * i));
+  const sc = buildScales(field);
+  const strong = profile(mk(10, 0, [90, 92], 60, 120), sc), weak = profile(mk(0, 10, [5, 30], 0, 0), sc);
+  assert.ok(strong.scoring > 0.95 && strong.win > 0.95 && weak.win < 0.1, "percentiles order teams");
+  assert.ok(strong.consistency > weak.consistency, "steady scoring is more consistent");
+  assert.ok(pickScore(strong) > pickScore(weak));
+  assert.equal(rawAxes({ wins: 2, losses: 1, ties: 0, rankings: [{ rank: 1, wins: 2, losses: 1, ties: 0 }] }).consistency, null, "one event isn't enough");
+  assert.equal(profile(null, sc).win, null);
+
+  const { queueState } = await import("./alerts.mjs");
+  const M = (num, red, blue, scored) => ({ id: num, name: `Qualifier #${num}`, round: 2, div: "D", num, scored, scheduled: new Date(Date.UTC(2026, 0, 1, 12, num * 7)).toISOString(), red: { teams: red }, blue: { teams: blue } });
+  const ev = { matches: [1, 2, 3, 4, 5, 6].map(n => M(n, n === 6 ? ["19109M", "A"] : ["X", "Y"], ["Z", "W"], n <= 1)) };
+  const early = Date.UTC(2026, 0, 1, 11, 0);
+  assert.equal(queueState(ev, "19109M", early, { matchesAhead: 3, minutes: 10 }).due, false, "4 matches ahead, an hour early");
+  ev.matches[1].scored = true;
+  assert.equal(queueState(ev, "19109M", early, { matchesAhead: 3, minutes: 10 }).due, true, "3 ahead: queue");
+  assert.equal(queueState({ matches: ev.matches.slice(0, 5) }, "19109M", early, { matchesAhead: 3, minutes: 10 }), null, "no match of ours");
+  console.log("ok  profile percentiles and queue alerts");
+}

@@ -11,6 +11,10 @@ The team's scouting app. It runs entirely in the cloud for free. Nobody's laptop
 - **Forgot the team code:** every place that asks for it has "Ask an admin"; admins (`ADMIN_EMAILS`) see who asked in Settings, with the code.
 - **Pit display lock:** Lock & full screen on the pit display keeps it there; leaving needs the team code (checked against a hash the sync stores in `meta/lock`).
 - **Two games:** Settings → Game switches the whole app between Override (this season) and Push Back (last season): events, teams, rankings, scorer, whiteboard field. Push Back data is refreshed weekly, and can be loaded on demand from Actions → Scout sync → Run workflow with game `pushback`.
+- **Queue now alerts:** when our next match is 3 matches away in our division (or 10 minutes from its scheduled time), every phone with the app open shows a banner with a chime and a buzz, and phones that turned on Settings → Match alerts → Phone notifications get a notification even with the app closed (once per match). On iPhone, notifications need Scout added to the Home Screen first (Share → Add to Home Screen) and opened from there. The sync makes its own Web Push keys the first time (`config/vapid`, unreadable from the app).
+- **Offline scouting:** scouting notes save on the phone straight away and send when there's a connection (marked "Waiting to send" until then). The app shows when it's offline.
+- **AI (needs `ANTHROPIC_API_KEY`):** Ask Scout (the chat button on every page) answers questions about teams, events and picks by looking up our data. Scout for me (the Scout tab) takes any event, loads every team's season and last season (Push Back), draws a hexagon chart for each, ranks them into a pick list and writes them up. All AI uses Claude (`claude-opus-5-5`) and is answered by the running sync job. **Spending cap:** $50 a day for the whole team, at most $15 a person and $10 for the nightly notes (`aiDailyUsd`, `aiPerPersonUsd`, `aiNotesUsd` in `config.json`); today's total shows in Settings → AI. Also set a monthly limit in the Anthropic console as a backstop.
+- **Hexagon charts:** each team's season as six percentiles against every team with stats (scoring, win rate, autonomous, driving, consistency, placement), with last season dashed on top, plus an event-by-event chart. The math is in `web/profile.js`, shared by the app and the sync.
 - **Privacy:** every page needs an account, and an account needs the team code. Our autos and scouting notes are only readable by members.
 - **Why this repo is public:** public repos get unlimited free GitHub Actions minutes, so live mode can run at every event. Nothing private is in here: the join code, VEX Events token and Firebase key are repository secrets, the Firebase web settings are meant to be public, and all data sits in Firestore behind the members-only rules. Our autos and robot code stay in the private robot repo.
 
@@ -18,6 +22,7 @@ The team's scouting app. It runs entirely in the cloud for free. Nobody's laptop
 
 | Page | What it does |
 |---|---|
+| Scout | Scout for me: pick any event, get a ranked pick list with a chart and write-up for every team |
 | Home | Our next match with partners, opponents and win chance, our match list, our rank, our events |
 | Events | Our events are loaded automatically. Search every event this season (Ontario by default) and load any of them |
 | Event | Our matches, all matches with predictions, rankings with OPR, teams, skills |
@@ -38,7 +43,7 @@ Alliance ratings are compared to give a win chance. The event page shows how man
 
 **Team notes:**
 - Every team at our events gets a short note written from its numbers.
-- If an Anthropic API key is added, upcoming events also get AI notes (Claude, `claude-opus-5-5`). These include a summary, strengths and things to watch for, based on the team's results plus our scouting notes. Server-side fallback is on (`fallbacks: "default"`), so if Opus is unavailable the request can be answered by Anthropic's default fallback model.
+- If an Anthropic API key is added, upcoming events also get AI notes (Claude, `claude-opus-5-5`): a longer summary, strengths, weaknesses, things to watch for, how to play with and against them, their trend over the season and their Push Back season, based on their results event by event and match by match, plus our scouting notes. Server-side fallback is on (`fallbacks: "default"`), so if Opus is unavailable the request can be answered by Anthropic's default fallback model.
 - A note is only rewritten when that team's data changes.
 - At most 150 AI notes are written per night.
 
@@ -76,7 +81,7 @@ In this repo (and the robot repo, for `FIREBASE_SERVICE_ACCOUNT` only) go to **S
 | `FIREBASE_SERVICE_ACCOUNT` | The entire contents of the `.json` file from step 1.6 |
 | `TEAM_JOIN_CODE` | A code teammates type to join. Pick something not guessable |
 | `ADMIN_EMAILS` | *Optional.* Emails of the app's admins, comma separated (their accounts must exist). Admins get "Ask an admin" requests for the team code in Settings and can see the code there. Only account ids are stored. |
-| `ANTHROPIC_API_KEY` | *Optional.* An API key from <https://console.anthropic.com>, for AI notes. Set a monthly spend limit there |
+| `ANTHROPIC_API_KEY` | *Optional.* An API key from <https://console.anthropic.com>, for AI notes, Ask Scout and Scout for me. Set a monthly spend limit there |
 
 Secrets are never shown again after saving, and they never appear in the code or logs.
 
