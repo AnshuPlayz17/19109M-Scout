@@ -2373,12 +2373,12 @@ views.fieldmap = (id = "") => {
   const explain = a ? [
     section(`${textFor(a.name)} · ${a.time}`),
     h("p", { class: "mapflow" }, acts.flatMap((x, k) => [k ? h("span", { class: "arrow" }, "→") : null, h("b", {}, x.codes.length ? x.codes.join(" + ") : /preload/.test(x.text) ? "preload" : "stay")]).filter(Boolean)),
-    h("div", { class: "group-list mapsteps" }, ...acts.map((x, k) => lrow({ info: true, lead: h("span", { class: "mapnum", style: "background:var(--surface-2)" }, k + 1), title: x.text }))),
+    h("div", { class: "group-list mapsteps" }, ...acts.map((x, k) => lrow({ info: true, lead: h("span", { class: "mapnum stepnum" }, k + 1), title: x.text }))),
     a.summary ? h("p", { class: "footnote" }, textFor(a.summary)) : null] : [];
 
   return [pagehead("Field map", a ? "The auto's route on the labelled field. Pick another below, or switch Red/Blue at the top." : "What the autos mean by Red Goal 2, the bottom toggle, a wall pin and so on. Pick an auto to see its route. Switch Red/Blue at the top to flip it."),
     picker,
-    h("div", { class: "field-wrap" }, svg),
+    h("div", { class: "field-wrap mapsmall" }, svg),
     ...explain,
     ...Object.entries(MAP_KINDS).flatMap(([k, [title]]) => [section(title), group(...legend[k])]),
     h("p", { class: "footnote" }, "Positions come from the field drawing, snapped to the 23.8\" tiles. Coordinates in the autos: inches from the field center, +X right, +Y up.")];

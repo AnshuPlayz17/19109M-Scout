@@ -393,6 +393,8 @@ tr.us td .tn { color: var(--accent-text); }
 
 /* ---------- autos */
 .field-wrap { position: relative; }
+.mapnum.stepnum { background: var(--surface-2); color: var(--fg); }
+.field-wrap.mapsmall { max-width: min(100%, 440px); margin-inline: auto; }
 .mapselect { flex: 1 1 260px; min-height: 44px; font: inherit; font-weight: 600; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); }
 .mapsteps .lrow .tx b, .mapsteps .lrow .tx span { white-space: normal; overflow: visible; text-overflow: clip; }
 .mapflow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0 10px; font-variant-numeric: tabular-nums; }
