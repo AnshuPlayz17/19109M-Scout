@@ -920,17 +920,18 @@ function pickAutos(list) {
   const key = a => pickF.aim === "safe" ? [LEVEL[a.level], -a.points, a.real] : [-a.points, LEVEL[a.level], a.real];
   return list.filter(fits).sort((x, y) => { const p = key(x), q = key(y); for (let i = 0; i < p.length; i++) if (p[i] !== q[i]) return p[i] - q[i]; return 0; });
 }
-function autoPicker(list) {
+function autoPicker(list, onMap = false) {
   if (!list.some(a => a.quad)) return null; // older autos without the numbers
   const chipRow = (label, opts, cur, onpick) => h("div", { class: "pickrow" }, h("span", { class: "muted small" }, label),
     h("div", { class: "chips" }, opts.map(([v, t]) => h("button", { type: "button", "aria-pressed": String(v === cur), onclick: () => onpick(v) }, t))));
   const res = pickAutos(list);
+  // on the Field map a result opens its route on the map; on the Autos page, the playback
   const row = (a, tag) => h("div", { class: "pickres" },
-    h("a", { class: "auto-row", href: `#/autos/${a.id}` }, fieldSvg(a, true),
+    h("a", { class: "auto-row", href: onMap ? `#/fieldmap/${a.id}` : `#/autos/${a.id}` }, fieldSvg(a, true),
       h("span", { class: "tx" }, h("b", {}, textFor(a.name)),
         h("span", {}, `${tag} · ${a.points} pts · ${pickF.fast ? a.fast : a.real} s · ${a.level} risk${a.ends === "midfield" ? " · ends in the midfield" : a.ends === "loader" ? " · ends at the loader" : ""}`)),
       h("span", {}), icon("chev", "chev")),
-    h("a", { class: "btn small", href: `#/fieldmap/${a.id}` }, "Map"));
+    onMap ? h("a", { class: "btn small", href: `#/autos/${a.id}` }, "Play") : h("a", { class: "btn small", href: `#/fieldmap/${a.id}` }, "Map"));
   return [section("Pick an auto"),
     h("div", { class: "card picker" },
       chipRow("We start in", [["left", "Left (our wall)"], ["bottom", "Bottom"], ["top", "Top"], ["skills", "Skills run"]], pickF.quad, v => setPick({ quad: v })),
@@ -2366,17 +2367,17 @@ views.fieldmap = (id = "") => {
   const svg = svgEl("svg", { viewBox: `${x0} ${y0} ${vw} ${vh}`, class: "fieldplot", role: "img", "aria-label": a ? `Field map of ${textFor(a.name)}` : "Field map with labels" });
   svgEl("image", { href: "field.webp", x: -23 * PX, y: -22 * PX, width: 1514 * PX, height: 1508 * PX, preserveAspectRatio: "none" }, svg);
   {
-    // red view: our (red) driver station behind the left wall, blue behind the right; the
-    // audience on one long side and the scorekeeper on the other (set per event below)
-    const audTop = store.get("audienceTop", false), flip = side === "blue";
-    const ours = side === "blue" ? "Blue" : "Red", theirs = side === "blue" ? "Red" : "Blue";
+    // Drive teams stand along the bottom edge of the drawing: red on the left half, blue
+    // on the right half (fixed, whichever alliance we are). The audience and scorekeeper
+    // sides change by event, so they're settings.
     const lab = (text, x, y, rot, col) => { const t = svgEl("text", { x, y, "text-anchor": "middle", "dominant-baseline": "middle", "font-size": 3.6, "font-weight": 700, fill: col, transform: rot ? `rotate(${rot} ${x} ${y})` : "" }, svg); t.textContent = text; };
-    const cy = y0 + vh / 2, cx = x0 + vw / 2;
-    lab(`${ours} driver station (us)`, x0 + M / 2, cy, -90, ours === "Red" ? "var(--red)" : "var(--blue)");
-    lab(`${theirs} driver station`, x0 + vw - M / 2, cy, 90, theirs === "Red" ? "var(--red)" : "var(--blue)");
-    const audAtTop = audTop !== flip;
-    lab("Audience", cx, audAtTop ? y0 + M / 2 : y0 + vh - M / 2, 0, "var(--muted)");
-    lab("Scorekeeper", cx, audAtTop ? y0 + vh - M / 2 : y0 + M / 2, 0, "var(--muted)");
+    const bottom = y0 + vh - M / 2, us = side === "blue" ? "Blue" : "Red";
+    lab(`Red driver station${us === "Red" ? " (us)" : ""}`, fx(-1.5 * T), bottom, 0, "var(--red)");
+    lab(`Blue driver station${us === "Blue" ? " (us)" : ""}`, fx(1.5 * T), bottom, 0, "var(--blue)");
+    const at = { top: [x0 + vw / 2, y0 + M / 2, 0], left: [x0 + M / 2, y0 + vh / 2, -90], right: [x0 + vw - M / 2, y0 + vh / 2, 90] };
+    const aud = store.get("audienceAt", "top"), sk = store.get("scorekeeperAt", "right");
+    if (aud === sk) lab("Audience · Scorekeeper", ...at[aud], "var(--muted)");
+    else { lab("Audience", ...at[aud], "var(--muted)"); lab("Scorekeeper", ...at[sk], "var(--muted)"); }
   }
   // quadrant names, faint
   for (const [name, x, y] of [["Left quadrant", -46, 4], ["Bottom quadrant", -4, -38], ["Top quadrant", 4, 38], ["Right quadrant", 46, -4]]) {
@@ -2424,11 +2425,12 @@ views.fieldmap = (id = "") => {
     a.summary ? h("p", { class: "footnote" }, textFor(a.summary)) : null] : [];
 
   return [pagehead("Field map", a ? "The auto's route on the labelled field. Pick another below, or switch Red/Blue at the top." : "What the autos mean by Red Goal 2, the bottom toggle, a wall pin and so on. Pick an auto to see its route. Switch Red/Blue at the top to flip it."),
+    canAutos && S.autos ? h("div", {}, ...(autoPicker(S.autos.autos, true) || [])) : null,
     picker,
     h("div", { class: "field-wrap mapsmall" }, svg),
-    h("div", { class: "row", style: "justify-content:center;margin:6px 0 2px" },
-      h("button", { type: "button", class: "btn small", onclick: () => { store.set("audienceTop", !store.get("audienceTop", false)); render(); } }, "Audience is on the other side")),
-    !a && canAutos && S.autos ? h("div", {}, ...(autoPicker(S.autos.autos) || [])) : null,
+    h("div", { class: "row mapsides" }, ...[["audienceAt", "Audience", "top"], ["scorekeeperAt", "Scorekeeper", "right"]].map(([k, label, d]) =>
+      h("label", {}, `${label} side `, h("select", { onchange: e => { store.set(k, e.target.value); render(); } },
+        ...[["top", "Top"], ["left", "Left"], ["right", "Right"]].map(([v, t]) => h("option", { value: v, selected: store.get(k, d) === v || null }, t)))))),
     ...explain,
     ...Object.entries(MAP_KINDS).flatMap(([k, [title]]) => [section(title), group(...legend[k])]),
     h("p", { class: "footnote" }, "Positions come from the field drawing, snapped to the 23.8\" tiles. Coordinates in the autos: inches from the field center, +X right, +Y up.")];
