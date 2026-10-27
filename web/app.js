@@ -1003,6 +1003,16 @@ const DEFAULT_LISTS = [
   { name: "Packing list", items: ["Robot", "Controllers (2) and charging cable", "Batteries (all) and charger", "Laptop and USB cable for uploading", "Hex keys, screwdrivers, zip ties",
     "Spare screws, nuts, standoffs", "Spare motors and cartridges", "Engineering notebook", "Power bar and extension cord", "Team shirts", "Water and snacks"] },
 ];
+// Robot practice for tuning the autos: what to do and what to send back
+const PRACTICE_LIST = { name: "Practice day", items: [
+  "Full battery in the robot", "Merge the latest robot PR, pull, upload with USB on the brain",
+  "Claw flat and cascade fully down before turning the robot on", "Keep the robot still for 3 s at startup (IMU)",
+  "Brain Devices screen: is port 1 (claw arm) showing a motor?", "Third cascade motor: write down its port",
+  "Drive test (Left arrow): photo of the brain screen", "Turn test (Right arrow): photo of the brain screen",
+  "Test B (pick up) and Y (reset) on a stacked pin and cup", "Cascade number at short-goal scoring height",
+  "Cascade number at tall-goal scoring height", "Photo: claw on a pin, tape from robot front to pin center",
+  "Photo: backed onto a goal, tape from robot back to goal center", "Autos on, run Toggle + preload, film it",
+  "Send the photos, numbers and videos to Claude"] };
 const newId = () => Math.random().toString(36).slice(2, 10);
 let listId = store.get("list", ""), editing = false, ticked = {};
 const barAt = {};
@@ -1042,7 +1052,10 @@ views.checklist = () => {
     h("div", { class: "chips" }, S.lists.map(x => h("button", { type: "button", "aria-pressed": String(x.id === l.id), onclick: () => { listId = x.id; store.set("list", x.id); render(); } }, x.name)),
       h("button", { type: "button", onclick: async () => { const name = prompt("Name for the new list"); if (!name?.trim()) return; const id = newId();
         listId = id; store.set("list", id); editing = true;
-        await setDoc(doc(db, "checklists", id), { name: name.trim().slice(0, 40), order: S.lists.length, items: [], done: {}, by: user.uid, at: serverTimestamp() }); } }, icon("plus"), "New list")),
+        await setDoc(doc(db, "checklists", id), { name: name.trim().slice(0, 40), order: S.lists.length, items: [], done: {}, by: user.uid, at: serverTimestamp() }); } }, icon("plus"), "New list"),
+      S.lists.some(x => x.name === PRACTICE_LIST.name) ? null : h("button", { type: "button", onclick: async () => { const id = newId();
+        listId = id; store.set("list", id);
+        await setDoc(doc(db, "checklists", id), { name: PRACTICE_LIST.name, order: S.lists.length, items: PRACTICE_LIST.items.map(text => ({ id: newId(), text })), done: {}, by: user.uid, at: serverTimestamp() }); } }, icon("plus"), "Practice day")),
     card(h("div", { class: "row between" }, h("h3", {}, l.name), h("span", { class: "muted num" }, `${count} of ${l.items.length}`)),
       h("div", { class: "progress", role: "progressbar", "aria-label": "Done", "aria-valuenow": count, "aria-valuemax": l.items.length }, bar)),
     group(...rows, l.items.length ? null : h("p", { class: "empty" }, "No items yet. Tap Edit list to add some.")),
