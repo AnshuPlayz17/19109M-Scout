@@ -2367,17 +2367,16 @@ views.fieldmap = (id = "") => {
   const svg = svgEl("svg", { viewBox: `${x0} ${y0} ${vw} ${vh}`, class: "fieldplot", role: "img", "aria-label": a ? `Field map of ${textFor(a.name)}` : "Field map with labels" });
   svgEl("image", { href: "field.webp", x: -23 * PX, y: -22 * PX, width: 1514 * PX, height: 1508 * PX, preserveAspectRatio: "none" }, svg);
   {
-    // Drive teams stand along the bottom edge of the drawing: red on the left half, blue
-    // on the right half (fixed, whichever alliance we are). The audience and scorekeeper
-    // sides change by event, so they're settings.
+    // Drive teams stand behind the side walls: red behind the left wall, blue behind the
+    // right one (fixed, whichever alliance we are). The audience and scorekeeper are on the
+    // top and bottom; which is where changes by event, so it's a setting.
     const lab = (text, x, y, rot, col) => { const t = svgEl("text", { x, y, "text-anchor": "middle", "dominant-baseline": "middle", "font-size": 3.6, "font-weight": 700, fill: col, transform: rot ? `rotate(${rot} ${x} ${y})` : "" }, svg); t.textContent = text; };
-    const bottom = y0 + vh - M / 2, us = side === "blue" ? "Blue" : "Red";
-    lab(`Red driver station${us === "Red" ? " (us)" : ""}`, fx(-1.5 * T), bottom, 0, "var(--red)");
-    lab(`Blue driver station${us === "Blue" ? " (us)" : ""}`, fx(1.5 * T), bottom, 0, "var(--blue)");
-    const at = { top: [x0 + vw / 2, y0 + M / 2, 0], left: [x0 + M / 2, y0 + vh / 2, -90], right: [x0 + vw - M / 2, y0 + vh / 2, 90] };
-    const aud = store.get("audienceAt", "top"), sk = store.get("scorekeeperAt", "right");
-    if (aud === sk) lab("Audience · Scorekeeper", ...at[aud], "var(--muted)");
-    else { lab("Audience", ...at[aud], "var(--muted)"); lab("Scorekeeper", ...at[sk], "var(--muted)"); }
+    const us = side === "blue" ? "Blue" : "Red", cy = y0 + vh / 2;
+    lab(`Red driver station${us === "Red" ? " (us)" : ""}`, x0 + M / 2, cy, -90, "var(--red)");
+    lab(`Blue driver station${us === "Blue" ? " (us)" : ""}`, x0 + vw - M / 2, cy, 90, "var(--blue)");
+    const audTop = store.get("audienceAt", "bottom") === "top";
+    lab("Audience", x0 + vw / 2, audTop ? y0 + M / 2 : y0 + vh - M / 2, 0, "var(--muted)");
+    lab("Scorekeeper", x0 + vw / 2, audTop ? y0 + vh - M / 2 : y0 + M / 2, 0, "var(--muted)");
   }
   // quadrant names, faint
   for (const [name, x, y] of [["Left quadrant", -46, 4], ["Bottom quadrant", -4, -38], ["Top quadrant", 4, 38], ["Right quadrant", 46, -4]]) {
@@ -2428,9 +2427,8 @@ views.fieldmap = (id = "") => {
     canAutos && S.autos ? h("div", {}, ...(autoPicker(S.autos.autos, true) || [])) : null,
     picker,
     h("div", { class: "field-wrap mapsmall" }, svg),
-    h("div", { class: "row mapsides" }, ...[["audienceAt", "Audience", "top"], ["scorekeeperAt", "Scorekeeper", "right"]].map(([k, label, d]) =>
-      h("label", {}, `${label} side `, h("select", { onchange: e => { store.set(k, e.target.value); render(); } },
-        ...[["top", "Top"], ["left", "Left"], ["right", "Right"]].map(([v, t]) => h("option", { value: v, selected: store.get(k, d) === v || null }, t)))))),
+    h("div", { class: "row mapsides" }, h("label", {}, "Audience side ", h("select", { onchange: e => { store.set("audienceAt", e.target.value); render(); } },
+      ...[["bottom", "Bottom (scorekeeper top)"], ["top", "Top (scorekeeper bottom)"]].map(([v, t]) => h("option", { value: v, selected: store.get("audienceAt", "bottom") === v || null }, t))))),
     ...explain,
     ...Object.entries(MAP_KINDS).flatMap(([k, [title]]) => [section(title), group(...legend[k])]),
     h("p", { class: "footnote" }, "Positions come from the field drawing, snapped to the 23.8\" tiles. Coordinates in the autos: inches from the field center, +X right, +Y up.")];
