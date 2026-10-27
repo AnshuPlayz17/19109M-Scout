@@ -1910,8 +1910,10 @@ views.skills = () => {
   const ourGrade = S.status?.team?.grade === "Middle School" ? "Middle School" : "High School";
   skillsGrade ||= store.get("skillsGrade", ourGrade);
   const whole = S.skillsBoard, runs = S.skillsRuns || [];
-  // One grade's list (ranked within it), or everyone. Older boards without grades show everyone.
-  const board = whole && skillsGrade !== "All" && whole.byGrade?.[skillsGrade] ? { ...whole, ...whole.byGrade[skillsGrade] } : whole;
+  // One grade's list (ranked within it), or everyone. A board from before the grade split has no
+  // per-grade lists yet: show nothing for one grade rather than everyone under the wrong label.
+  const noSplit = whole && !whole.byGrade && skillsGrade !== "All";
+  const board = noSplit ? null : whole && skillsGrade !== "All" ? { ...whole, ...whole.byGrade[skillsGrade] } : whole;
   const gradeLabel = skillsGrade === "All" || !whole?.byGrade ? "" : skillsGrade === "Middle School" ? " MS" : " HS";
   const official = ourEvents().map(e => ({ e, s: S.events[e.id]?.skills?.find(x => x.team === us()) })).filter(x => x.s);
   const target = store.get("skillsTarget", 10);
@@ -1921,7 +1923,8 @@ views.skills = () => {
   const best = k => Math.max(0, ...official.map(x => x.s[k === "prog" ? "prog" : "driver"]), ...runs.filter(r => r.kind === k).map(r => r.score));
   const bestOfficial = board?.ours;
   const out = [pagehead("Skills planner", `${G.name} · ${board?.region || "our region"}`),
-    seg([["High School", "High School"], ["Middle School", "Middle School"], ["All", "Both"]], skillsGrade, v => { skillsGrade = v; store.set("skillsGrade", v); render(); })];
+    seg([["High School", "High School"], ["Middle School", "Middle School"], ["All", "Both"]], skillsGrade, v => { skillsGrade = v; store.set("skillsGrade", v); render(); }),
+    noSplit ? notice("The leaderboard is split into High School and Middle School at the next full refresh (within a day). Tap Both to see everyone until then.", `No ${skillsGrade} list yet`, "skills") : null];
   out.push(glance([[bestOfficial ? `#${bestOfficial.rank}` : "–", `In ${board?.region || "region"}${gradeLabel}`, "accent"], [bestOfficial ? bestOfficial.total : "–", "Best official"],
     [best("driver") || "–", "Best driver"], [best("prog") || "–", "Best auto"]]));
   // Target
@@ -1930,7 +1933,7 @@ views.skills = () => {
       h("div", { class: "stepper" }, h("button", { type: "button", "aria-label": "Lower target", onclick: () => { store.set("skillsTarget", Math.max(1, target - 1)); render(); } }, "−"), h("output", {}, target),
         h("button", { type: "button", "aria-label": "Higher target", onclick: () => { store.set("skillsTarget", Math.min(60, target + 1)); render(); } }, "+"))),
     at ? h("p", {}, `#${target} right now is `, h("b", {}, `${at.n} with ${at.total}`), ` (${at.driver} driver + ${at.prog} auto). Teams around there average ${avg("driver")} driver and ${avg("prog")} auto.`)
-      : h("p", { class: "muted" }, board === undefined ? "Loading…" : "The leaderboard fills in after the next nightly refresh."),
+      : h("p", { class: "muted" }, whole === undefined ? "Loading…" : noSplit ? `Waiting for the ${skillsGrade} list.` : "The leaderboard fills in after the next nightly refresh."),
     at ? (() => {
       const gapD = Math.max(0, avg("driver") - best("driver")), gapP = Math.max(0, avg("prog") - best("prog")), total = best("driver") + best("prog");
       return h("div", { class: "kv" },
