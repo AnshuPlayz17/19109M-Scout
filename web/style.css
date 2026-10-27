@@ -87,7 +87,7 @@ main { width: 100%; max-width: 1400px; margin: 0 auto; display: flex; flex-direc
   padding: 6px max(var(--gutter), env(safe-area-inset-right)) calc(var(--nav-h) + 28px + env(safe-area-inset-bottom)) max(var(--gutter), env(safe-area-inset-left)); }
 .pagehead { display: flex; flex-direction: column; gap: 4px; padding: 4px 0 2px; }
 .pagehead p { color: var(--muted); font-size: 0.9375rem; }
-nav.bottom { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; display: grid; grid-template-columns: repeat(5, 1fr);
+nav.bottom { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; display: grid; grid-template-columns: repeat(6, 1fr);
   background: var(--bar-bg); -webkit-backdrop-filter: saturate(160%) blur(18px); backdrop-filter: saturate(160%) blur(18px); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom); }
 nav.bottom a { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; height: var(--nav-h); font-size: 0.6875rem; font-weight: 600; letter-spacing: 0.01em; color: var(--muted); }
 nav.bottom a svg { width: 24px; height: 24px; }
@@ -836,3 +836,10 @@ header.top .right { display: flex; align-items: center; gap: 8px; justify-conten
 .lockbtn svg { width: 19px; height: 19px; }
 .lockbtn.open { color: var(--good); border-color: transparent; background: rgba(29, 135, 72, 0.12); }
 .pm-user { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.pickmore { padding: 0 14px 10px 14px; }
+.pickmore summary { cursor: pointer; font-size: 0.875rem; font-weight: 600; color: var(--accent-text); padding: 2px 0 4px; }
+.pickmore p { margin: 6px 0; }
+.mapplay { justify-content: center; align-items: center; gap: 8px; max-width: 680px; margin: 8px auto 0; width: 100%; }
+.mapeq { text-align: center; font-size: 0.875rem; font-weight: 600; color: var(--muted); margin: 6px 0 0; }
+.mapsteps .lrow.on { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--accent-text); }
+.pickitem + .pickitem { border-top: 1px solid var(--sep); }

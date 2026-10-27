@@ -114,6 +114,7 @@ const ICONS = {
   home: '<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/>',
   events: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
   teams: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.2a5 5 0 0 1 5.5 5.8"/>',
+  fieldmap: '<path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/>',
   autos: '<path d="M5 19c3 0 3-6 7-6s4-6 7-6"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="7" r="2"/>',
   more: '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>',
   scorer: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6"/>',
@@ -874,7 +875,7 @@ const pose = s => side === "blue" ? [-s.x, -s.y, normH(s.h + 180)] : [s.x, s.y, 
 // Blue routes are the red ones turned 180°, so left/right and top/bottom swap too
 const DIRS = { left: "right", right: "left", top: "bottom", bottom: "top", Left: "Right", Right: "Left", Top: "Bottom", Bottom: "Top" };
 const flipDirs = s => s.replace(/\b(left|right|top|bottom|Left|Right|Top|Bottom)\b/g, w => DIRS[w]);
-const textFor = s => side === "blue" ? flipDirs(s.replace(/Red Goal/g, "Blue Goal").replace(/to red/g, "to blue").replace(/(\d+)°/g, (m, d) => normH(+d + 180) + "°")) : s;
+const textFor = s => side === "blue" ? flipDirs(s.replace(/Red Goal/g, "Blue Goal").replace(/red goals/g, "blue goals").replace(/to red/g, "to blue").replace(/(\d+)°/g, (m, d) => normH(+d + 180) + "°")) : s;
 const fx = x => x + W, fy = y => W - y;
 // Same names as the robot code's Auto list (tools/gen-autons.mjs): "goal2-rush" -> GOAL2_RUSH, "252w" -> W252
 const autoEnum = id => { const n = id.toUpperCase().replace(/[^A-Z0-9]+/g, "_"); return /^[0-9]/.test(n) ? "W" + n.replace(/W$/, "") : n; };
@@ -929,13 +930,24 @@ function autoPicker(list, onMap = false) {
   const chipRow = (label, opts, cur, onpick) => h("div", { class: "pickrow" }, h("span", { class: "muted small" }, label),
     h("div", { class: "chips" }, opts.map(([v, t]) => h("button", { type: "button", "aria-pressed": String(v === cur), onclick: () => onpick(v) }, t))));
   const res = pickAutos(list);
-  // on the Field map a result opens its route on the map; on the Autos page, the playback
-  const row = (a, tag) => h("div", { class: "pickres" },
-    h("a", { class: "auto-row", href: onMap ? `#/fieldmap/${a.id}` : `#/autos/${a.id}` }, fieldSvg(a, true),
-      h("span", { class: "tx" }, h("b", {}, textFor(a.name)),
-        h("span", {}, `${tag} · ${a.points} pts · ${pickF.fast ? a.fast : a.real} s · ${a.level} risk${a.ends === "midfield" ? " · ends in the midfield" : a.ends === "loader" ? " · ends at the loader" : ""}`)),
-      h("span", {}), icon("chev", "chev")),
-    onMap ? h("a", { class: "btn small", href: `#/autos/${a.id}` }, "Play") : h("a", { class: "btn small", href: `#/fieldmap/${a.id}` }, "Map"));
+  // On the Field map a result plays on that map (and is picked in its dropdown); on the
+  // Autos page it opens the auto's own page. "Learn more" opens what it does underneath.
+  const onField = a => ({ href: `#/fieldmap/${a.id}`, onclick: e => { mapPlay = a.id; if (location.hash === `#/fieldmap/${a.id}`) { e.preventDefault(); render(); } } });
+  const row = (a, tag) => h("div", { class: "pickitem" },
+    h("div", { class: "pickres" },
+      h("a", { class: "auto-row", ...(onMap ? onField(a) : { href: `#/autos/${a.id}` }) }, fieldSvg(a, true),
+        h("span", { class: "tx" }, h("b", {}, textFor(a.name)),
+          h("span", {}, `${tag} · ${a.points} pts · ${pickF.fast ? a.fast : a.real} s · ${a.level} risk${a.ends === "midfield" ? " · ends in the midfield" : a.ends === "loader" ? " · ends at the loader" : ""}`)),
+        h("span", {}), icon("chev", "chev")),
+      h("a", { class: "btn small", ...onField(a) }, onMap ? "Play" : "Map")),
+    h("details", { class: "pickmore" }, h("summary", {}, "Learn more"),
+      h("p", { class: "mapflow" }, autoActions(a).flatMap((x, k) => [k ? h("span", { class: "arrow" }, "→") : null, h("b", {}, x.codes.length ? x.codes.join(" + ") : /preload/.test(x.text) ? "preload" : "stay")]).filter(Boolean)),
+      a.summary ? h("p", { class: "small" }, textFor(a.summary)) : null,
+      a.score ? h("p", { class: "small" }, h("b", {}, "Scores: "), textFor(a.score)) : null,
+      a.risk ? h("p", { class: "small" }, h("b", {}, "Risk: "), a.risk) : null,
+      h("div", { class: "row", style: "gap:8px;flex-wrap:wrap" },
+        h("a", { class: "btn small primary", ...onField(a) }, "Play it on the field map"),
+        h("a", { class: "btn small", href: `#/autos/${a.id}` }, "All steps + robot code"))));
   return [section("Pick an auto"),
     h("div", { class: "card picker" },
       chipRow("We start in", [["left", textFor("Left (our wall)")], ["bottom", textFor("Bottom")], ["skills", "Skills run"]], pickF.quad, v => setPick({ quad: v })),
@@ -958,31 +970,25 @@ function autoList() {
       h("span", {}), icon("chev", "chev")))),
     S.autos.updatedAt ? h("p", { class: "footnote" }, `Updated ${ago(S.autos.updatedAt)}. Switch Red/Blue at the top to mirror them.`) : null];
 }
-function autoDetail(a) {
-  const pts = a.steps.map(pose);
-  const wrap = h("div", { class: "field-wrap", "data-path": pathMode });
-  const svg = fieldSvg(a, false); wrap.append(svg);
-  const robot = svg.querySelector(".robot");
-  let cur = 0;
-  const stepEls = [];
-  const stepLabel = h("span", { class: "muted small num", style: "margin-left:auto" });
-  const playBtn = h("button", { type: "button", class: "btn primary", onclick: () => (anim ? pause() : play()) }, "Play");
-  const setStep = (i, place = true) => {
-    cur = Math.max(0, Math.min(pts.length - 1, i));
-    if (place) placeRobot(robot, pts[cur]);
-    stepEls.forEach((el, j) => el.setAttribute("aria-current", j === cur ? "step" : "false"));
-    stepLabel.textContent = `Step ${cur + 1} of ${pts.length}`;
+// Plays a route on a field drawing: at each step the robot turns, then drives to the next one.
+function routePlayer(robot, pts, onStep) {
+  const pl = { cur: 0 };
+  pl.btn = h("button", { type: "button", class: "btn primary", onclick: () => (anim ? pl.pause() : pl.play()) }, "Play");
+  pl.set = (i, place = true) => {
+    pl.cur = Math.max(0, Math.min(pts.length - 1, i));
+    if (place) placeRobot(robot, pts[pl.cur]);
+    onStep(pl.cur);
   };
-  const pause = () => { stopAnim(); playBtn.textContent = "Play"; };
-  function play() {
-    if (cur >= pts.length - 1) setStep(0);
-    playBtn.textContent = "Pause";
+  pl.pause = () => { stopAnim(); pl.btn.textContent = "Play"; };
+  pl.play = () => {
+    if (pl.cur >= pts.length - 1) pl.set(0);
+    pl.btn.textContent = "Pause";
     const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
     anim = { raf: 0 };
     const runSeg = () => {
       if (!anim) return;
-      if (cur >= pts.length - 1) { pause(); return; }
-      const A = pts[cur], B = pts[cur + 1];
+      if (pl.cur >= pts.length - 1) { pl.pause(); return; }
+      const A = pts[pl.cur], B = pts[pl.cur + 1];
       const dH = ((B[2] - A[2] + 540) % 360) - 180, dist = Math.hypot(B[0] - A[0], B[1] - A[1]);
       const tTurn = reduce ? 0 : Math.abs(dH) / 300, tDrive = reduce ? 0 : dist / 40, total = (tTurn + tDrive + (reduce ? 0.5 : 0.25)) * 1000;
       const t0 = performance.now();
@@ -994,12 +1000,25 @@ function autoDetail(a) {
         else if (t < tTurn + tDrive) { const k = (t - tTurn) / tDrive; p = [A[0] + (B[0] - A[0]) * k, A[1] + (B[1] - A[1]) * k, A[2] + dH]; }
         else p = [B[0], B[1], A[2] + dH];
         placeRobot(robot, p);
-        if (now - t0 >= total) { setStep(cur + 1, false); runSeg(); } else anim.raf = requestAnimationFrame(tick_);
+        if (now - t0 >= total) { pl.set(pl.cur + 1, false); runSeg(); } else anim.raf = requestAnimationFrame(tick_);
       };
       anim.raf = requestAnimationFrame(tick_);
     };
     runSeg();
-  }
+  };
+  return pl;
+}
+function autoDetail(a) {
+  const pts = a.steps.map(pose);
+  const wrap = h("div", { class: "field-wrap", "data-path": pathMode });
+  const svg = fieldSvg(a, false); wrap.append(svg);
+  const stepEls = [];
+  const stepLabel = h("span", { class: "muted small num", style: "margin-left:auto" });
+  const pl = routePlayer(svg.querySelector(".robot"), pts, cur => {
+    stepEls.forEach((el, j) => el.setAttribute("aria-current", j === cur ? "step" : "false"));
+    stepLabel.textContent = `Step ${cur + 1} of ${pts.length}`;
+  });
+  const { set: setStep, pause, btn: playBtn } = pl;
   const steps = group();
   let prev = null;
   a.steps.forEach((s, i) => {
@@ -1019,8 +1038,8 @@ function autoDetail(a) {
     h("div", { class: "autodetail" },
       h("div", { class: "col sticky" }, card(wrap,
         h("div", { class: "row" }, playBtn,
-          h("button", { type: "button", class: "btn", "aria-label": "Previous step", onclick: () => { pause(); setStep(cur - 1); } }, "‹"),
-          h("button", { type: "button", class: "btn", "aria-label": "Next step", onclick: () => { pause(); setStep(cur + 1); } }, "›"), stepLabel),
+          h("button", { type: "button", class: "btn", "aria-label": "Previous step", onclick: () => { pause(); setStep(pl.cur - 1); } }, "‹"),
+          h("button", { type: "button", class: "btn", "aria-label": "Next step", onclick: () => { pause(); setStep(pl.cur + 1); } }, "›"), stepLabel),
         h("div", { class: "row between" }, h("span", { class: "muted small" }, "Path"), pathSeg))),
       h("div", { class: "col" },
         card(h("p", {}, textFor(a.summary)), h("p", { class: "small" }, h("b", {}, "Scores: "), textFor(a.score)), h("p", { class: "small" }, h("b", {}, "Risk: "), a.risk)),
@@ -2358,7 +2377,7 @@ function autoActions(a) {
   });
   return out;
 }
-let mapAuto = "";
+let mapPlay = ""; // an auto picked from the filter on the Field map: play it once the map draws
 views.fieldmap = (id = "") => {
   const canAutos = areasOpen() && G.key === "override";
   if (canAutos) watchAutos();
@@ -2391,17 +2410,22 @@ views.fieldmap = (id = "") => {
     [["Their side of the", 31.5], ["autonomous line:", 35], ["don't cross in auto", 38.5]].forEach(([line, y]) =>
       svgEl("text", { x: fx(k * 36), y: fy(k * 36) + y - 35, "text-anchor": "middle", "font-size": 2.8, "font-weight": 700, fill: "#ffd23f" }, svg).textContent = line);
   }
-  // quadrant names, faint
-  for (const [name, x, y] of [["Left quadrant", -46, 4], ["Bottom quadrant", -4, -38], ["Top quadrant", 4, 38], ["Right quadrant", 46, -4]]) {
+  // quadrant names, faint, each with the other alliance's name for it: blue's routes are
+  // red's turned 180°, so our left-quadrant autos are blue's right-quadrant ones, and so on
+  for (const [name, same, x, y] of [["Left quadrant", "= Blue's right", -46, 4], ["Bottom quadrant", "= Blue's top", -4, -38], ["Top quadrant", "= Red's bottom", 4, 38], ["Right quadrant", "= Red's left", 46, -4]]) {
     const [px, py] = side === "blue" ? [-x, -y] : [x, y];
     svgEl("text", { x: fx(px), y: fy(py), "text-anchor": "middle", "font-size": 3.4, "font-weight": 600, fill: "#ffffff", opacity: a ? 0.3 : 0.55 }, svg).textContent = mapName(name);
+    svgEl("text", { x: fx(px), y: fy(py) + 3.6, "text-anchor": "middle", "font-size": 2.6, "font-weight": 600, fill: "#ffffff", opacity: a ? 0.3 : 0.5 }, svg).textContent = mapName(same);
   }
+  let robotG = null;
   if (a) { // the route, under the labels
     const pts = a.steps.map(pose), col = side === "blue" ? "var(--blue)" : "var(--red)";
     svgEl("polyline", { points: pts.map(p => fx(p[0]) + "," + fy(p[1])).join(" "), fill: "none", stroke: "#f2f2f2", "stroke-width": 1.2, "stroke-linejoin": "round", opacity: 0.9 }, svg);
-    const r0 = svgEl("g", {}, svg);
-    svgEl("rect", { x: -7.5, y: -7.5, width: 15, height: 15, rx: 1.5, fill: col, "fill-opacity": 0.45, stroke: col, "stroke-width": 0.9 }, r0);
-    placeRobot(r0, pts[0]);
+    robotG = svgEl("g", {}, svg);
+    svgEl("rect", { x: -7.5, y: -7.5, width: 15, height: 15, rx: 1.5, fill: col, "fill-opacity": 0.45, stroke: col, "stroke-width": 0.9 }, robotG);
+    svgEl("line", { x1: 0, y1: 0, x2: 0, y2: -CLAW, stroke: "#f2f2f2", "stroke-width": 1 }, robotG);
+    svgEl("circle", { cx: 0, cy: -CLAW, r: 1.4, fill: "#f2f2f2" }, robotG);
+    placeRobot(robotG, pts[0]);
   }
   // letters, not plain numbers, so they aren't confused with the goal numbers printed on the field
   const legend = Object.fromEntries(Object.keys(MAP_KINDS).map(k => [k, []]));
@@ -2427,19 +2451,42 @@ views.fieldmap = (id = "") => {
     const sel = h("select", { class: "mapselect", "aria-label": "Show an auto on the map", onchange: e => { location.hash = e.target.value ? `#/fieldmap/${e.target.value}` : "#/fieldmap"; } },
       h("option", { value: "" }, "Just the map (no auto)"),
       ...groups.map(g => h("optgroup", { label: textFor(g) }, ...autos.filter(x => x.group === g).map(x => h("option", { value: x.id, selected: x.id === id || null }, textFor(x.name))))));
-    picker = h("div", { class: "row", style: "gap:8px;flex-wrap:wrap" }, sel, a ? h("a", { class: "btn", href: `#/autos/${a.id}` }, "Play it") : null);
+    picker = h("div", { class: "row", style: "gap:8px;flex-wrap:wrap" }, sel, a ? h("a", { class: "btn", href: `#/autos/${a.id}` }, "All steps") : null);
   }
 
+  // play the route on this map; the action it's on lights up in the list below
+  const wrap = h("div", { class: "field-wrap mapsmall" }, svg);
+  let controls = null;
+  const actEls = acts.map((x, k) => lrow({ info: true, lead: h("span", { class: "mapnum stepnum" }, k + 1), title: x.text }));
+  if (a) {
+    const pts = a.steps.map(pose), stepLabel = h("span", { class: "muted small num", style: "margin-left:auto" });
+    const pl = routePlayer(robotG, pts, cur => {
+      let on = -1; acts.forEach((x, k) => { if (x.step <= cur) on = k; });
+      actEls.forEach((el, k) => el.classList.toggle("on", k === on));
+      stepLabel.textContent = `Step ${cur + 1} of ${pts.length}`;
+    });
+    pl.set(0);
+    controls = h("div", { class: "row mapplay" }, pl.btn,
+      h("button", { type: "button", class: "btn", "aria-label": "Previous step", onclick: () => { pl.pause(); pl.set(pl.cur - 1); } }, "‹"),
+      h("button", { type: "button", class: "btn", "aria-label": "Next step", onclick: () => { pl.pause(); pl.set(pl.cur + 1); } }, "›"), stepLabel);
+    if (mapPlay === a.id) { // picked from the filter: bring the map into view and play it
+      mapPlay = "";
+      setTimeout(() => { if (!wrap.isConnected) return; wrap.scrollIntoView({ behavior: "smooth", block: "center" }); pl.play(); }, 300);
+    }
+  }
   const explain = a ? [
     section(`${textFor(a.name)} · ${a.time}`),
     h("p", { class: "mapflow" }, acts.flatMap((x, k) => [k ? h("span", { class: "arrow" }, "→") : null, h("b", {}, x.codes.length ? x.codes.join(" + ") : /preload/.test(x.text) ? "preload" : "stay")]).filter(Boolean)),
-    h("div", { class: "group-list mapsteps" }, ...acts.map((x, k) => lrow({ info: true, lead: h("span", { class: "mapnum stepnum" }, k + 1), title: x.text }))),
+    h("div", { class: "group-list mapsteps" }, ...actEls),
     a.summary ? h("p", { class: "footnote" }, textFor(a.summary)) : null] : [];
 
   return [pagehead("Field map", a ? "The auto's route on the labelled field. Pick another below, or switch Red/Blue at the top." : "What the autos mean by Red Goal 2, the bottom toggle, a wall pin and so on. Pick an auto to see its route. Switch Red/Blue at the top to flip it."),
     canAutos && S.autos ? h("div", {}, ...(autoPicker(S.autos.autos, true) || [])) : null,
     picker,
-    h("div", { class: "field-wrap mapsmall" }, svg),
+    wrap, controls,
+    h("p", { class: "mapeq" }, side === "blue"
+      ? "Same autos, mirrored: Blue right = Red left · Blue top = Red bottom"
+      : "Same autos, mirrored: Red left = Blue right · Red bottom = Blue top"),
     h("div", { class: "row mapsides" }, h("label", {}, "Audience side ", h("select", { onchange: e => { store.set("audienceAt", e.target.value); render(); } },
       ...[["bottom", "Bottom (scorekeeper top)"], ["top", "Top (scorekeeper bottom)"]].map(([v, t]) => h("option", { value: v, selected: store.get("audienceAt", "bottom") === v || null }, t))))),
     ...explain,
@@ -2450,7 +2497,6 @@ views.fieldmap = (id = "") => {
 views.more = () => [pagehead("More"),
   group(
     lrow({ href: "#/autos", ic: "autos", title: "Autos", sub: "Our autonomous routes" }),
-    lrow({ href: "#/fieldmap", ic: "autos", title: "Field map", sub: "Names of the goals, toggles and pins the autos use" }),
     lrow({ ic: "chat", title: "Ask Scout", sub: "AI chat about teams, events and picks", onclick: () => openChat() }),
     lrow({ href: "#/skills", ic: "skills", title: "Skills planner", sub: "Our runs vs the region and a target" }),
     lrow({ href: "#/review", ic: "review", title: "Season review", sub: "Results, what changed, notebook entries" }),
@@ -2520,16 +2566,16 @@ views.settings = () => {
 
 // ---------------------------------------------------------------- shell
 
-// Five tabs on phones; the sidebar on wide screens lists everything.
-const NAV = [["home", "Home", ""], ["events", "Events", "events"], ["teams", "Teams", "teams"], ["scout", "Scout", "scout"], ["more", "More", "more"]];
-const NAV_WIDE = [["home", "Home", ""], ["events", "Events", "events"], ["teams", "Teams", "teams"], ["scout", "Scout for me", "scout"], ["autos", "Autos", "autos"], ["skills", "Skills planner", "skills"], ["review", "Season review", "review"], ["checklist", "Checklist", "checklist"],
+// Six tabs on phones; the sidebar on wide screens lists everything.
+const NAV = [["home", "Home", ""], ["events", "Events", "events"], ["teams", "Teams", "teams"], ["scout", "Scout", "scout"], ["fieldmap", "Map", "fieldmap"], ["more", "More", "more"]];
+const NAV_WIDE = [["home", "Home", ""], ["events", "Events", "events"], ["teams", "Teams", "teams"], ["scout", "Scout for me", "scout"], ["autos", "Autos", "autos"], ["fieldmap", "Field map", "fieldmap"], ["skills", "Skills planner", "skills"], ["review", "Season review", "review"], ["checklist", "Checklist", "checklist"],
   ["scorer", "Scorer", "scorer"], ["predict", "Predictor", "predict"], ["board", "Whiteboard", "board"], ["pit", "Pit display", "pit"], ["settings", "Settings", "settings"]];
 const TAB_OF = { skills: "more", review: "more", event: "events", match: "events", select: "events", assign: "events", team: "teams", autos: "more", checklist: "more", scorer: "more", predict: "more", settings: "more", board: "more", pit: "more" };
 const BACK = { skills: ["More", "#/more"], review: ["Back"], event: ["Events", "#/events"], match: ["Back"], select: ["Back"], assign: ["Back"], team: ["Back"], checklist: ["More", "#/more"], scorer: ["More", "#/more"], predict: ["More", "#/more"], settings: ["More", "#/more"] };
 const wide = matchMedia("(min-width: 900px)");
 let lastRoute = "", titleObs = null;
 // How deep each page sits, so moving deeper slides in from the right and Back slides the other way.
-const DEPTH = { home: 0, events: 0, teams: 0, autos: 0, scout: 0, more: 0, event: 1, checklist: 1, scorer: 1, predict: 1, settings: 1, board: 1, pit: 1, match: 2, team: 2, select: 2, assign: 2, skills: 1, review: 1 };
+const DEPTH = { home: 0, events: 0, teams: 0, autos: 0, scout: 0, fieldmap: 0, more: 0, event: 1, checklist: 1, scorer: 1, predict: 1, settings: 1, board: 1, pit: 1, match: 2, team: 2, select: 2, assign: 2, skills: 1, review: 1 };
 const calm = matchMedia("(prefers-reduced-motion: reduce)");
 let lastName = "", lastDepth = 0, drawn = false, moving = null;
 /** Runs `change` as an animated transition (View Transitions where the browser has them). */
