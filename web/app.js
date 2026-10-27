@@ -910,11 +910,43 @@ views.autos = (id) => {
   if (id && !a) return [notice("That auto isn't in the list any more.", "Not found")];
   return a ? autoDetail(a) : autoList();
 };
+// ---- auto picker: filters -> the best auto and backups
+let pickF = { quad: "left", aim: "points", ends: "any", fast: false, ...store.get("autoPick", {}) };
+const setPick = patch => { pickF = { ...pickF, ...patch }; store.set("autoPick", pickF); render(); };
+const LEVEL = { low: 0, medium: 1, high: 2 };
+function pickAutos(list) {
+  const limit = pickF.quad === "skills" ? 60 : 15;
+  const fits = a => a.quad === pickF.quad && (pickF.fast ? a.fast : a.real) <= limit && (pickF.ends === "any" || a.ends === pickF.ends);
+  const key = a => pickF.aim === "safe" ? [LEVEL[a.level], -a.points, a.real] : [-a.points, LEVEL[a.level], a.real];
+  return list.filter(fits).sort((x, y) => { const p = key(x), q = key(y); for (let i = 0; i < p.length; i++) if (p[i] !== q[i]) return p[i] - q[i]; return 0; });
+}
+function autoPicker(list) {
+  if (!list.some(a => a.quad)) return null; // older autos without the numbers
+  const chipRow = (label, opts, cur, onpick) => h("div", { class: "pickrow" }, h("span", { class: "muted small" }, label),
+    h("div", { class: "chips" }, opts.map(([v, t]) => h("button", { type: "button", "aria-pressed": String(v === cur), onclick: () => onpick(v) }, t))));
+  const res = pickAutos(list);
+  const row = (a, tag) => h("div", { class: "pickres" },
+    h("a", { class: "auto-row", href: `#/autos/${a.id}` }, fieldSvg(a, true),
+      h("span", { class: "tx" }, h("b", {}, textFor(a.name)),
+        h("span", {}, `${tag} · ${a.points} pts · ${pickF.fast ? a.fast : a.real} s · ${a.level} risk${a.ends === "midfield" ? " · ends in the midfield" : a.ends === "loader" ? " · ends at the loader" : ""}`)),
+      h("span", {}), icon("chev", "chev")),
+    h("a", { class: "btn small", href: `#/fieldmap/${a.id}` }, "Map"));
+  return [section("Pick an auto"),
+    h("div", { class: "card picker" },
+      chipRow("We start in", [["left", "Left (our wall)"], ["bottom", "Bottom"], ["top", "Top"], ["skills", "Skills run"]], pickF.quad, v => setPick({ quad: v })),
+      chipRow("We want", [["points", "Most points"], ["safe", "Safest"]], pickF.aim, v => setPick({ aim: v })),
+      chipRow("End", [["any", "Anywhere"], ["midfield", "In the midfield"], ["loader", "At the loader"]], pickF.ends, v => setPick({ ends: v })),
+      chipRow("Robot speed", [[false, "Today's speed"], [true, "Full speed (tuned)"]], pickF.fast, v => setPick({ fast: v }))),
+    res.length ? group(row(res[0], "Best"), ...res.slice(1, 4).map((a, i) => row(a, `Backup ${i + 1}`)))
+      : notice(pickF.ends !== "any" ? "No auto from there ends that way. Try End: Anywhere." : "Nothing fits in the time at today's speed. Try Full speed.", "No match", "autos")];
+}
 function autoList() {
   const groups = ["All", ...new Set(S.autos.autos.map(a => a.group))];
   const shown = S.autos.autos.filter(a => autoGroup === "All" || a.group === autoGroup);
   return [pagehead("Autos", "View only. Tap one to play it on the field."),
     group(lrow({ href: "#/fieldmap", ic: "autos", title: "Field map", sub: "What Red Goal 2, the bottom toggle, a wall pin… mean" })),
+    ...(autoPicker(S.autos.autos) || []),
+    section("All autos"),
     h("div", { class: "chips" }, groups.map(g => h("button", { type: "button", "aria-pressed": String(g === autoGroup), onclick: () => { autoGroup = g; render(); } }, g))),
     group(...shown.map(a => h("a", { class: "auto-row", href: `#/autos/${a.id}` }, fieldSvg(a, true),
       h("span", { class: "tx" }, h("b", {}, textFor(a.name)), h("span", {}, `${a.time} · ${a.pins} pin${a.pins === 1 ? "" : "s"}${a.rec ? " · build first" : ""}`)),
