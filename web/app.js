@@ -2361,8 +2361,23 @@ views.fieldmap = (id = "") => {
   const acts = a ? autoActions(a) : [];
   const used = new Set(acts.flatMap(x => x.codes));
 
-  const svg = svgEl("svg", { viewBox: `${-23 * PX} ${-22 * PX} ${1514 * PX} ${1508 * PX}`, class: "fieldplot", role: "img", "aria-label": a ? `Field map of ${textFor(a.name)}` : "Field map with labels" });
+  // a margin around the field for the driver stations, audience and scorekeeper
+  const M = 9, x0 = -23 * PX - M, y0 = -22 * PX - M, vw = 1514 * PX + 2 * M, vh = 1508 * PX + 2 * M;
+  const svg = svgEl("svg", { viewBox: `${x0} ${y0} ${vw} ${vh}`, class: "fieldplot", role: "img", "aria-label": a ? `Field map of ${textFor(a.name)}` : "Field map with labels" });
   svgEl("image", { href: "field.webp", x: -23 * PX, y: -22 * PX, width: 1514 * PX, height: 1508 * PX, preserveAspectRatio: "none" }, svg);
+  {
+    // red view: our (red) driver station behind the left wall, blue behind the right; the
+    // audience on one long side and the scorekeeper on the other (set per event below)
+    const audTop = store.get("audienceTop", false), flip = side === "blue";
+    const ours = side === "blue" ? "Blue" : "Red", theirs = side === "blue" ? "Red" : "Blue";
+    const lab = (text, x, y, rot, col) => { const t = svgEl("text", { x, y, "text-anchor": "middle", "dominant-baseline": "middle", "font-size": 3.6, "font-weight": 700, fill: col, transform: rot ? `rotate(${rot} ${x} ${y})` : "" }, svg); t.textContent = text; };
+    const cy = y0 + vh / 2, cx = x0 + vw / 2;
+    lab(`${ours} driver station (us)`, x0 + M / 2, cy, -90, ours === "Red" ? "var(--red)" : "var(--blue)");
+    lab(`${theirs} driver station`, x0 + vw - M / 2, cy, 90, theirs === "Red" ? "var(--red)" : "var(--blue)");
+    const audAtTop = audTop !== flip;
+    lab("Audience", cx, audAtTop ? y0 + M / 2 : y0 + vh - M / 2, 0, "var(--muted)");
+    lab("Scorekeeper", cx, audAtTop ? y0 + vh - M / 2 : y0 + M / 2, 0, "var(--muted)");
+  }
   // quadrant names, faint
   for (const [name, x, y] of [["Left quadrant", -46, 4], ["Bottom quadrant", -4, -38], ["Top quadrant", 4, 38], ["Right quadrant", 46, -4]]) {
     const [px, py] = side === "blue" ? [-x, -y] : [x, y];
@@ -2411,6 +2426,9 @@ views.fieldmap = (id = "") => {
   return [pagehead("Field map", a ? "The auto's route on the labelled field. Pick another below, or switch Red/Blue at the top." : "What the autos mean by Red Goal 2, the bottom toggle, a wall pin and so on. Pick an auto to see its route. Switch Red/Blue at the top to flip it."),
     picker,
     h("div", { class: "field-wrap mapsmall" }, svg),
+    h("div", { class: "row", style: "justify-content:center;margin:6px 0 2px" },
+      h("button", { type: "button", class: "btn small", onclick: () => { store.set("audienceTop", !store.get("audienceTop", false)); render(); } }, "Audience is on the other side")),
+    !a && canAutos && S.autos ? h("div", {}, ...(autoPicker(S.autos.autos) || [])) : null,
     ...explain,
     ...Object.entries(MAP_KINDS).flatMap(([k, [title]]) => [section(title), group(...legend[k])]),
     h("p", { class: "footnote" }, "Positions come from the field drawing, snapped to the 23.8\" tiles. Coordinates in the autos: inches from the field center, +X right, +Y up.")];
