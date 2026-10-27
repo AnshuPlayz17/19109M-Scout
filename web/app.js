@@ -871,7 +871,10 @@ let side = store.get("alliance", "red"), pathMode = store.get("pathMode", "show"
 if (!["show", "faint", "hide"].includes(pathMode)) pathMode = "show";
 const normH = d => ((d % 360) + 360) % 360;
 const pose = s => side === "blue" ? [-s.x, -s.y, normH(s.h + 180)] : [s.x, s.y, s.h];
-const textFor = s => side === "blue" ? s.replace(/Red Goal/g, "Blue Goal").replace(/to red/g, "to blue").replace(/(\d+)°/g, (m, d) => normH(+d + 180) + "°") : s;
+// Blue routes are the red ones turned 180°, so left/right and top/bottom swap too
+const DIRS = { left: "right", right: "left", top: "bottom", bottom: "top", Left: "Right", Right: "Left", Top: "Bottom", Bottom: "Top" };
+const flipDirs = s => s.replace(/\b(left|right|top|bottom|Left|Right|Top|Bottom)\b/g, w => DIRS[w]);
+const textFor = s => side === "blue" ? flipDirs(s.replace(/Red Goal/g, "Blue Goal").replace(/to red/g, "to blue").replace(/(\d+)°/g, (m, d) => normH(+d + 180) + "°")) : s;
 const fx = x => x + W, fy = y => W - y;
 // Same names as the robot code's Auto list (tools/gen-autons.mjs): "goal2-rush" -> GOAL2_RUSH, "252w" -> W252
 const autoEnum = id => { const n = id.toUpperCase().replace(/[^A-Z0-9]+/g, "_"); return /^[0-9]/.test(n) ? "W" + n.replace(/W$/, "") : n; };
@@ -934,7 +937,7 @@ function autoPicker(list, onMap = false) {
     onMap ? h("a", { class: "btn small", href: `#/autos/${a.id}` }, "Play") : h("a", { class: "btn small", href: `#/fieldmap/${a.id}` }, "Map"));
   return [section("Pick an auto"),
     h("div", { class: "card picker" },
-      chipRow("We start in", [["left", "Left (our wall)"], ["bottom", "Bottom"], ["top", "Top"], ["skills", "Skills run"]], pickF.quad, v => setPick({ quad: v })),
+      chipRow("We start in", [["left", textFor("Left (our wall)")], ["bottom", textFor("Bottom")], ["top", textFor("Top")], ["skills", "Skills run"]], pickF.quad, v => setPick({ quad: v })),
       chipRow("We want", [["points", "Most points"], ["safe", "Safest"]], pickF.aim, v => setPick({ aim: v })),
       chipRow("End", [["any", "Anywhere"], ["midfield", "In the midfield"], ["loader", "At the loader"]], pickF.ends, v => setPick({ ends: v })),
       chipRow("Robot speed", [[false, "Today's speed"], [true, "Full speed (tuned)"]], pickF.fast, v => setPick({ fast: v }))),
@@ -948,7 +951,7 @@ function autoList() {
     group(lrow({ href: "#/fieldmap", ic: "autos", title: "Field map", sub: "What Red Goal 2, the bottom toggle, a wall pin… mean" })),
     ...(autoPicker(S.autos.autos) || []),
     section("All autos"),
-    h("div", { class: "chips" }, groups.map(g => h("button", { type: "button", "aria-pressed": String(g === autoGroup), onclick: () => { autoGroup = g; render(); } }, g))),
+    h("div", { class: "chips" }, groups.map(g => h("button", { type: "button", "aria-pressed": String(g === autoGroup), onclick: () => { autoGroup = g; render(); } }, textFor(g)))),
     group(...shown.map(a => h("a", { class: "auto-row", href: `#/autos/${a.id}` }, fieldSvg(a, true),
       h("span", { class: "tx" }, h("b", {}, textFor(a.name)), h("span", {}, `${a.time} · ${a.pins} pin${a.pins === 1 ? "" : "s"}${a.rec ? " · build first" : ""}`)),
       h("span", {}), icon("chev", "chev")))),
@@ -2331,7 +2334,8 @@ const MAP_ITEMS = [
   ["other", "Top-left match loader (red)", -68.5, 59.5, "Blocked for our robot by the cluster next to it"],
   ["other", "Midfield corner pins", -T, 0, "Pins at the four corners of the midfield (the diamond)"],
 ];
-const mapName = n => side === "blue" ? n.replace(/Red|Blue/g, m => (m === "Red" ? "Blue" : "Red")).replace(/\(red\)/, "(blue)") : n;
+const SWAP_RB = { Red: "Blue", Blue: "Red", red: "blue", blue: "red" };
+const mapName = n => side === "blue" ? flipDirs(n.replace(/\b(Red|Blue|red|blue)\b/g, m => SWAP_RB[m])) : n;
 // map items with their codes (G1, T1, P1, ...), in red alliance coordinates
 const MAP_CODED = (() => { const n = {}; return MAP_ITEMS.map(([kind, name, x, y, note]) => ({ kind, name, x, y, note, code: MAP_KINDS[kind][2] + (n[kind] = (n[kind] || 0) + 1) })); })();
 const nearestItem = (kinds, x, y) => MAP_CODED.filter(m => kinds.includes(m.kind)).reduce((b, m) => (Math.hypot(m.x - x, m.y - y) < Math.hypot(b.x - x, b.y - y) ? m : b));
@@ -2413,7 +2417,7 @@ views.fieldmap = (id = "") => {
     const groups = [...new Set(autos.map(x => x.group))];
     const sel = h("select", { class: "mapselect", "aria-label": "Show an auto on the map", onchange: e => { location.hash = e.target.value ? `#/fieldmap/${e.target.value}` : "#/fieldmap"; } },
       h("option", { value: "" }, "Just the map (no auto)"),
-      ...groups.map(g => h("optgroup", { label: g }, ...autos.filter(x => x.group === g).map(x => h("option", { value: x.id, selected: x.id === id || null }, textFor(x.name))))));
+      ...groups.map(g => h("optgroup", { label: textFor(g) }, ...autos.filter(x => x.group === g).map(x => h("option", { value: x.id, selected: x.id === id || null }, textFor(x.name))))));
     picker = h("div", { class: "row", style: "gap:8px;flex-wrap:wrap" }, sel, a ? h("a", { class: "btn", href: `#/autos/${a.id}` }, "Play it") : null);
   }
 
