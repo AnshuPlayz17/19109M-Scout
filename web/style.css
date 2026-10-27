@@ -393,6 +393,11 @@ tr.us td .tn { color: var(--accent-text); }
 
 /* ---------- autos */
 .field-wrap { position: relative; }
+.mapselect { flex: 1 1 260px; min-height: 44px; font: inherit; font-weight: 600; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); }
+.mapsteps .lrow .tx b, .mapsteps .lrow .tx span { white-space: normal; overflow: visible; text-overflow: clip; }
+.mapflow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0 10px; font-variant-numeric: tabular-nums; }
+.mapflow b { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 2px 8px; }
+.mapflow .arrow { color: var(--muted); }
 .mapnum { display: inline-grid; place-items: center; min-width: 34px; height: 26px; padding: 0 6px; border-radius: 13px; font-weight: 700; font-size: 13px; color: #1b1d22; font-variant-numeric: tabular-nums; }
 svg.fieldplot { width: 100%; height: auto; display: block; border-radius: 8px; }
 .route { transition: opacity 0.15s; }

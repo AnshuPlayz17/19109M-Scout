@@ -2299,25 +2299,87 @@ const MAP_ITEMS = [
   ["other", "Midfield corner pins", -T, 0, "Pins at the four corners of the midfield (the diamond)"],
 ];
 const mapName = n => side === "blue" ? n.replace(/Red|Blue/g, m => (m === "Red" ? "Blue" : "Red")).replace(/\(red\)/, "(blue)") : n;
-views.fieldmap = () => {
-  const svg = svgEl("svg", { viewBox: `${-23 * PX} ${-22 * PX} ${1514 * PX} ${1508 * PX}`, class: "fieldplot", role: "img", "aria-label": "Field map with labels" });
+// map items with their codes (G1, T1, P1, ...), in red alliance coordinates
+const MAP_CODED = (() => { const n = {}; return MAP_ITEMS.map(([kind, name, x, y, note]) => ({ kind, name, x, y, note, code: MAP_KINDS[kind][2] + (n[kind] = (n[kind] || 0) + 1) })); })();
+const nearestItem = (kinds, x, y) => MAP_CODED.filter(m => kinds.includes(m.kind)).reduce((b, m) => (Math.hypot(m.x - x, m.y - y) < Math.hypot(b.x - x, b.y - y) ? m : b));
+/** The auto's actions in map terms: [{ step, codes, text }] */
+function autoActions(a) {
+  const out = [], u = h => [Math.sin(h * Math.PI / 180), Math.cos(h * Math.PI / 180)];
+  a.steps.forEach((s, i) => {
+    const t = s.do, [ux, uy] = u(s.h), add = (codes, text) => out.push({ step: i, codes, text });
+    if (/toggle over/.test(t)) { const m = nearestItem(["toggle"], s.x + 4 * ux, s.y + 4 * uy); add([m.code], `Push ${m.code}, ${mapName(m.name).toLowerCase().replace(/^our/, "our")}, over to ${side}`); }
+    else if (/PICK UP the preload/.test(t)) add([], "Pick up the preload (already in the claw)");
+    else if (/MATCH LOAD/.test(t)) add(["O1"], "Wait at the loader (O1) for a match load, then pick it up");
+    else if (/PICK UP/.test(t)) { const m = nearestItem(["pin"], s.x + CLAW * ux, s.y + CLAW * uy); add([m.code], `Drive in and pick up ${m.code} (${mapName(m.name).toLowerCase()})`); }
+    if (/SCORE/.test(t)) { const m = nearestItem(["goal"], s.x - 9 * ux, s.y - 9 * uy); add([m.code], `Back onto ${m.code} (${mapName(m.name)}) and score`); }
+    if (i === a.steps.length - 1) {
+      if (/midfield/.test(t) && !/SCORE/.test(t)) add(["G9"], "Park in the midfield, next to the tall goal (G9)");
+      else if (/midfield/.test(t)) add([], "Stay there: the robot ends in the midfield");
+      else if (/match loader/.test(t)) add(["O1"], "Park facing the loader (O1), claw open, ready for the driver");
+    }
+  });
+  return out;
+}
+let mapAuto = "";
+views.fieldmap = (id = "") => {
+  const canAutos = areasOpen() && G.key === "override";
+  if (canAutos) watchAutos();
+  const autos = canAutos && S.autos ? S.autos.autos : [];
+  const a = autos.find(x => x.id === id) || null;
+  const acts = a ? autoActions(a) : [];
+  const used = new Set(acts.flatMap(x => x.codes));
+
+  const svg = svgEl("svg", { viewBox: `${-23 * PX} ${-22 * PX} ${1514 * PX} ${1508 * PX}`, class: "fieldplot", role: "img", "aria-label": a ? `Field map of ${textFor(a.name)}` : "Field map with labels" });
   svgEl("image", { href: "field.webp", x: -23 * PX, y: -22 * PX, width: 1514 * PX, height: 1508 * PX, preserveAspectRatio: "none" }, svg);
   // quadrant names, faint
   for (const [name, x, y] of [["Left quadrant", -46, 4], ["Bottom quadrant", -4, -38], ["Top quadrant", 4, 38], ["Right quadrant", 46, -4]]) {
     const [px, py] = side === "blue" ? [-x, -y] : [x, y];
-    svgEl("text", { x: fx(px), y: fy(py), "text-anchor": "middle", "font-size": 3.4, "font-weight": 600, fill: "#ffffff", opacity: 0.55 }, svg).textContent = mapName(name);
+    svgEl("text", { x: fx(px), y: fy(py), "text-anchor": "middle", "font-size": 3.4, "font-weight": 600, fill: "#ffffff", opacity: a ? 0.3 : 0.55 }, svg).textContent = mapName(name);
+  }
+  if (a) { // the route, under the labels
+    const pts = a.steps.map(pose), col = side === "blue" ? "var(--blue)" : "var(--red)";
+    svgEl("polyline", { points: pts.map(p => fx(p[0]) + "," + fy(p[1])).join(" "), fill: "none", stroke: "#f2f2f2", "stroke-width": 1.2, "stroke-linejoin": "round", opacity: 0.9 }, svg);
+    const r0 = svgEl("g", {}, svg);
+    svgEl("rect", { x: -7.5, y: -7.5, width: 15, height: 15, rx: 1.5, fill: col, "fill-opacity": 0.45, stroke: col, "stroke-width": 0.9 }, r0);
+    placeRobot(r0, pts[0]);
   }
   // letters, not plain numbers, so they aren't confused with the goal numbers printed on the field
   const legend = Object.fromEntries(Object.keys(MAP_KINDS).map(k => [k, []]));
-  MAP_ITEMS.forEach(([kind, name, x, y, note]) => {
-    const [, col, letter] = MAP_KINDS[kind], n = letter + (legend[kind].length + 1);
-    const [px, py] = side === "blue" ? [-x, -y] : [x, y];
-    svgEl("rect", { x: fx(px) - 3.9, y: fy(py) - 2.6, width: 7.8, height: 5.2, rx: 2.6, fill: col, stroke: "#1b1d22", "stroke-width": 0.5 }, svg);
-    svgEl("text", { x: fx(px), y: fy(py) + 1.05, "text-anchor": "middle", "font-size": 3, "font-weight": 700, fill: "#1b1d22" }, svg).textContent = n;
-    legend[kind].push(lrow({ info: true, lead: h("span", { class: "mapnum", style: `background:${col}` }, n), title: mapName(name), sub: mapName(note) }));
-  });
-  return [pagehead("Field map", "What the autos mean by Red Goal 2, the bottom toggle, a wall pin and so on. Switch Red/Blue at the top to flip it."),
+  for (const m of MAP_CODED) {
+    const col = MAP_KINDS[m.kind][1], [px, py] = side === "blue" ? [-m.x, -m.y] : [m.x, m.y];
+    const g = svgEl("g", { opacity: a && !used.has(m.code) ? 0.35 : 1 }, svg);
+    svgEl("rect", { x: fx(px) - 3.9, y: fy(py) - 2.6, width: 7.8, height: 5.2, rx: 2.6, fill: col, stroke: used.has(m.code) ? "#ffffff" : "#1b1d22", "stroke-width": used.has(m.code) ? 0.9 : 0.5 }, g);
+    svgEl("text", { x: fx(px), y: fy(py) + 1.05, "text-anchor": "middle", "font-size": 3, "font-weight": 700, fill: "#1b1d22" }, g).textContent = m.code;
+    legend[m.kind].push(lrow({ info: true, lead: h("span", { class: "mapnum", style: `background:${col}` }, m.code), title: mapName(m.name), sub: mapName(m.note) }));
+  }
+  if (a) { // numbered actions on top
+    acts.forEach((x, k) => { const [px, py] = pose(a.steps[x.step]);
+      svgEl("circle", { cx: fx(px), cy: fy(py), r: 2.7, fill: "#ffffff", stroke: "#1b1d22", "stroke-width": 0.4 }, svg);
+      svgEl("text", { x: fx(px), y: fy(py) + 1.1, "text-anchor": "middle", "font-size": 3.1, "font-weight": 700, fill: "#1b1d22" }, svg).textContent = k + 1; });
+  }
+
+  // auto picker
+  let picker = null;
+  if (!canAutos) picker = h("p", { class: "muted small" }, areasOpen() ? "Our autos are for Override; switch the game back in Settings to see them here." : "Unlock with the lock button at the top to see our autos on the map.");
+  else if (S.autos === undefined) picker = h("p", { class: "muted small" }, "Loading our autos…");
+  else {
+    const groups = [...new Set(autos.map(x => x.group))];
+    const sel = h("select", { class: "mapselect", "aria-label": "Show an auto on the map", onchange: e => { location.hash = e.target.value ? `#/fieldmap/${e.target.value}` : "#/fieldmap"; } },
+      h("option", { value: "" }, "Just the map (no auto)"),
+      ...groups.map(g => h("optgroup", { label: g }, ...autos.filter(x => x.group === g).map(x => h("option", { value: x.id, selected: x.id === id || null }, textFor(x.name))))));
+    picker = h("div", { class: "row", style: "gap:8px;flex-wrap:wrap" }, sel, a ? h("a", { class: "btn", href: `#/autos/${a.id}` }, "Play it") : null);
+  }
+
+  const explain = a ? [
+    section(`${textFor(a.name)} · ${a.time}`),
+    h("p", { class: "mapflow" }, acts.flatMap((x, k) => [k ? h("span", { class: "arrow" }, "→") : null, h("b", {}, x.codes.length ? x.codes.join(" + ") : /preload/.test(x.text) ? "preload" : "stay")]).filter(Boolean)),
+    h("div", { class: "group-list mapsteps" }, ...acts.map((x, k) => lrow({ info: true, lead: h("span", { class: "mapnum", style: "background:var(--surface-2)" }, k + 1), title: x.text }))),
+    a.summary ? h("p", { class: "footnote" }, textFor(a.summary)) : null] : [];
+
+  return [pagehead("Field map", a ? "The auto's route on the labelled field. Pick another below, or switch Red/Blue at the top." : "What the autos mean by Red Goal 2, the bottom toggle, a wall pin and so on. Pick an auto to see its route. Switch Red/Blue at the top to flip it."),
+    picker,
     h("div", { class: "field-wrap" }, svg),
+    ...explain,
     ...Object.entries(MAP_KINDS).flatMap(([k, [title]]) => [section(title), group(...legend[k])]),
     h("p", { class: "footnote" }, "Positions come from the field drawing, snapped to the 23.8\" tiles. Coordinates in the autos: inches from the field center, +X right, +Y up.")];
 };
