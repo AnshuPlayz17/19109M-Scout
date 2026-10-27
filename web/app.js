@@ -139,6 +139,7 @@ const ICONS = {
   robot: '<rect x="5" y="7" width="14" height="12" rx="2"/><path d="M12 3v4M9 12h.01M15 12h.01M9 16h6"/>',
   expand: '<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  unlock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 7.5-2"/>',
   lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
   skills: '<path d="M4 20h4v-6H4zM10 20h4V9h-4zM16 20h4V4h-4z"/>',
   review: '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 12h7M9 16h5"/>',
@@ -1295,14 +1296,55 @@ async function openUnlock() {
 document.addEventListener("fullscreenchange", () => { if (lastName === "pit") refresh(); });
 
 // ---- locked areas: Autos, the Whiteboard and our scouting notes need the team code too.
-// Once it's entered they stay open on this device for 12 hours, or until Lock now in Settings.
+// Once it's entered they stay open on this device for 12 hours (or a week, or 30 days: the
+// person's choice), or until they lock it again with the lock in the top bar or in Settings.
 // This locks the screens, not the data: everyone who can sign in is already a team member.
-const AREA_HOURS = 12;
+const UNLOCK_CHOICES = [[12, "12 hours"], [168, "1 week"], [720, "30 days"]];
+const unlockHours = () => store.get("unlockHours", 12);
+const unlockLabel = () => (UNLOCK_CHOICES.find(([h_]) => h_ === unlockHours()) || UNLOCK_CHOICES[0])[1];
 const areasOpen = () => store.get("areasOpenUntil", 0) > Date.now();
+const openAreas = () => store.set("areasOpenUntil", Date.now() + unlockHours() * 3600e3);
 const lockAreas = () => { store.set("areasOpenUntil", 0); render(); };
+// The code field is a real password field with a username next to it, so the phone's password
+// manager can save the team code and fill it in with Face ID or a fingerprint next time.
+const codeUser = () => h("input", { type: "text", name: "username", autocomplete: "username", value: "19109M team code", tabindex: "-1", "aria-hidden": "true", class: "pm-user", readonly: true });
+/** The lock in the top bar: one tap to unlock everything (team code), or to lock it again. */
+function lockButton() {
+  const open = areasOpen();
+  return h("button", { type: "button", class: `lockbtn${open ? " open" : ""}`, "aria-label": open ? "Lock team notes" : "Unlock team notes", title: open ? "Unlocked: tap to lock" : "Unlock team notes",
+    onclick: () => { if (open) { lockAreas(); toast("Locked"); } else quickUnlock(); } }, icon(open ? "unlock" : "lock"));
+}
+async function quickUnlock() {
+  if (document.querySelector(".unlock")) return;
+  const { what, placeholder, check } = await codeCheck();
+  const input = h("input", { type: "password", name: "password", autocomplete: "current-password", placeholder, "aria-label": what, enterkeyhint: "go" });
+  const msg = h("p", { class: "error", role: "alert" });
+  const close = () => { bg.remove(); box.remove(); };
+  const bg = h("div", { class: "sheet-bg unlock-bg", onclick: close });
+  const box = h("form", { class: "sheet unlock", method: "post", action: "#", role: "dialog", "aria-modal": "true", "aria-label": "Unlock team notes", onsubmit: async e => {
+      e.preventDefault();
+      const v = input.value.trim(); if (!v) return;
+      msg.textContent = "";
+      const fb = verdict(box.querySelector("button[type=submit]"));
+      const ok = await check(v);
+      await fb.done(ok === true);
+      if (ok !== true) { input.value = ""; box.classList.remove("shake"); void box.offsetWidth; box.classList.add("shake"); msg.textContent = ok; input.focus(); return; }
+      gateMsg = ""; openAreas(); close(); render();
+      toast(`Unlocked for ${unlockLabel()}`);
+    } },
+    h("div", { class: "head" }, h("h3", {}, "Unlock team notes"), h("button", { class: "btn small plain", type: "button", onclick: close }, "Cancel")),
+    h("p", { class: "muted small" }, `Scouting notes, pit sheets, match notes, autos and the whiteboard. Enter the ${what} once.`),
+    codeUser(), secret(input, what), msg,
+    h("div", { class: "field" }, "Keep unlocked on this phone for", seg(UNLOCK_CHOICES.map(([v, l]) => [v, l]), unlockHours(), v => { store.set("unlockHours", v); box.querySelectorAll(".seg button").forEach(b => b.setAttribute("aria-pressed", String(Number(b.dataset.v) === v))); }, "mini")),
+    h("button", { class: "btn primary wide", type: "submit" }, icon("unlock"), "Unlock"),
+    askAdmin("Team notes", S.nickname));
+  box.addEventListener("keydown", e => { if (e.key === "Escape") close(); });
+  document.body.append(bg, box);
+  input.focus();
+}
 let gateMsg = ""; // kept outside the form so a live-data redraw doesn't wipe "wrong code"
 function areaGate(title, why, { focus = true } = {}) {
-  const input = h("input", { type: "password", autocomplete: "off", "aria-label": "Team code" });
+  const input = h("input", { type: "password", name: "password", autocomplete: "current-password", "aria-label": "Team code", enterkeyhint: "go" });
   const msg = h("p", { class: "error", role: "alert" }, gateMsg);
   const what = h("span", {}, "team code");
   codeCheck().then(c => { what.textContent = c.what; input.placeholder = c.placeholder; input.setAttribute("aria-label", c.what); });
@@ -1315,13 +1357,13 @@ function areaGate(title, why, { focus = true } = {}) {
     await fb.done(ok === true);
     if (ok !== true) { input.value = ""; gateMsg = ok; document.querySelectorAll(".gate .error").forEach(m => { m.textContent = ok; }); const f = document.querySelector(".gate") || form; f.classList.remove("shake"); void f.offsetWidth; f.classList.add("shake"); return; }
     gateMsg = "";
-    store.set("areasOpenUntil", Date.now() + AREA_HOURS * 3600e3);
+    openAreas();
     input.blur(); render();
   } },
     h("span", { class: "gate-icon", "aria-hidden": "true" }, icon("lock")),
     h("h2", {}, `${title} ${/s$/.test(title) && title !== "Autos" ? "are" : "is"} locked`),
-    h("p", { class: "muted" }, why, " Enter the ", what, ` to open it on this device for ${AREA_HOURS} hours.`),
-    secret(input, "team code"), msg,
+    h("p", { class: "muted" }, why, " Enter the ", what, ` to open everything on this device for ${unlockLabel()} (change it in Settings or the lock at the top).`),
+    codeUser(), secret(input, "team code"), msg,
     h("button", { class: "btn primary wide", type: "submit" }, icon("lock"), "Unlock"),
     askAdmin(title, S.nickname));
   if (focus) setTimeout(() => { if (form.isConnected && matchMedia("(hover: hover)").matches) input.focus(); }, 50);
@@ -1862,9 +1904,15 @@ const watchSkillsRuns = () => watch("skillsRuns", query(collection(db, "skillsRu
   S.skillsRuns = s.docs.map(d => ({ id: d.id, pending: d.metadata.hasPendingWrites, ...d.data() })).sort((a, b) => a.date.localeCompare(b.date));
 }, { includeMetadataChanges: true });
 const skDraft = { kind: "driver", score: "", date: new Date().toLocaleDateString("en-CA"), notes: "" };
+let skillsGrade = null; // "High School" | "Middle School" | "All"; defaults to our own grade
 views.skills = () => {
   watchSkillsBoard(); watchSkillsRuns();
-  const board = S.skillsBoard, runs = S.skillsRuns || [];
+  const ourGrade = S.status?.team?.grade === "Middle School" ? "Middle School" : "High School";
+  skillsGrade ||= store.get("skillsGrade", ourGrade);
+  const whole = S.skillsBoard, runs = S.skillsRuns || [];
+  // One grade's list (ranked within it), or everyone. Older boards without grades show everyone.
+  const board = whole && skillsGrade !== "All" && whole.byGrade?.[skillsGrade] ? { ...whole, ...whole.byGrade[skillsGrade] } : whole;
+  const gradeLabel = skillsGrade === "All" || !whole?.byGrade ? "" : skillsGrade === "Middle School" ? " MS" : " HS";
   const official = ourEvents().map(e => ({ e, s: S.events[e.id]?.skills?.find(x => x.team === us()) })).filter(x => x.s);
   const target = store.get("skillsTarget", 10);
   const at = board?.top?.[Math.min(target, board.top.length) - 1];
@@ -1872,12 +1920,13 @@ views.skills = () => {
   const avg = k => near.length ? Math.round(near.reduce((s, r) => s + r[k], 0) / near.length) : 0;
   const best = k => Math.max(0, ...official.map(x => x.s[k === "prog" ? "prog" : "driver"]), ...runs.filter(r => r.kind === k).map(r => r.score));
   const bestOfficial = board?.ours;
-  const out = [pagehead("Skills planner", `${G.name} · ${board?.region || "our region"}`)];
-  out.push(glance([[bestOfficial ? `#${bestOfficial.rank}` : "–", `In ${board?.region || "region"}`, "accent"], [bestOfficial ? bestOfficial.total : "–", "Best official"],
+  const out = [pagehead("Skills planner", `${G.name} · ${board?.region || "our region"}`),
+    seg([["High School", "High School"], ["Middle School", "Middle School"], ["All", "Both"]], skillsGrade, v => { skillsGrade = v; store.set("skillsGrade", v); render(); })];
+  out.push(glance([[bestOfficial ? `#${bestOfficial.rank}` : "–", `In ${board?.region || "region"}${gradeLabel}`, "accent"], [bestOfficial ? bestOfficial.total : "–", "Best official"],
     [best("driver") || "–", "Best driver"], [best("prog") || "–", "Best auto"]]));
   // Target
   out.push(section("Target"), card(
-    h("div", { class: "row between" }, h("span", {}, `Top ${target} in ${board?.region || "the region"}`),
+    h("div", { class: "row between" }, h("span", {}, `Top ${target} in ${board?.region || "the region"}${skillsGrade === "All" ? "" : ` (${skillsGrade})`}`),
       h("div", { class: "stepper" }, h("button", { type: "button", "aria-label": "Lower target", onclick: () => { store.set("skillsTarget", Math.max(1, target - 1)); render(); } }, "−"), h("output", {}, target),
         h("button", { type: "button", "aria-label": "Higher target", onclick: () => { store.set("skillsTarget", Math.min(60, target + 1)); render(); } }, "+"))),
     at ? h("p", {}, `#${target} right now is `, h("b", {}, `${at.n} with ${at.total}`), ` (${at.driver} driver + ${at.prog} auto). Teams around there average ${avg("driver")} driver and ${avg("prog")} auto.`)
@@ -1913,11 +1962,11 @@ views.skills = () => {
     sub: [r.date, r.nickname, r.notes, r.pending ? "waiting to send" : ""].filter(Boolean).join(" · "),
     trail: r.by === user.uid ? h("button", { type: "button", class: "btn small danger", onclick: () => { if (confirm("Delete this run?")) deleteDoc(doc(db, "skillsRuns", r.id)); } }, "Delete") : "" }))));
   // Leaderboard
-  if (board?.top?.length) out.push(section(`${board.region} leaderboard`), h("div", { class: "group-list tablewrap" }, h("table", {},
+  if (board?.top?.length) out.push(section(`${board.region}${skillsGrade === "All" ? "" : ` ${skillsGrade}`} leaderboard`), h("div", { class: "group-list tablewrap" }, h("table", {},
     h("thead", {}, h("tr", {}, h("th", { class: "num" }, "#"), h("th", {}, "Team"), h("th", { class: "num" }, "Driver"), h("th", { class: "num" }, "Auto"), h("th", { class: "num" }, "Total"))),
     h("tbody", {}, [...board.top.slice(0, 25), ...(board.ours && board.ours.rank > 25 ? [board.ours] : [])].map(r => h("tr", { class: `${r.n === us() ? "us" : ""}${r.rank === target ? " target" : ""}` },
       h("td", { class: "num" }, r.rank), h("td", {}, h("a", { href: teamHref(r.n) }, tn(r.n))), h("td", { class: "num" }, r.driver), h("td", { class: "num" }, r.prog), h("td", { class: "num" }, r.total)))))),
-    h("p", { class: "footnote" }, `Best driver plus best autonomous for each team this season, from ${board.count} teams; VEX ranks the best combined run from one event, so it can differ a little. Updated ${ago(board.updatedAt)}.`));
+    h("p", { class: "footnote" }, `Best driver plus best autonomous for each team this season, from ${board.count} ${skillsGrade === "All" ? "" : `${skillsGrade.toLowerCase()} `}teams; Middle School and High School are ranked separately; VEX ranks the best combined run from one event, so it can differ a little. Updated ${ago(board.updatedAt)}.`));
   return out;
 };
 /** Driver and autonomous scores over time; official runs are big dots, dashed lines are the target. */
@@ -2242,8 +2291,10 @@ views.settings = () => {
     ...(S.admin ? adminSection() : []),
     ...aiSection(),
     section("Locked areas"),
-    group(lrow({ info: true, ic: "lock", title: "Autos, Whiteboard, scouting notes", sub: areasOpen() ? `Open on this device until ${fmtTime(new Date(store.get("areasOpenUntil", 0)).toISOString())}` : "Locked: they ask for the team code",
-      trail: areasOpen() ? h("button", { type: "button", class: "btn small", onclick: lockAreas }, "Lock now") : "" })),
+    group(lrow({ info: true, ic: "lock", title: "Team notes, autos, whiteboard", sub: areasOpen() ? `Open on this device until ${new Date(store.get("areasOpenUntil", 0)).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : "Locked: they ask for the team code",
+      trail: areasOpen() ? h("button", { type: "button", class: "btn small", onclick: lockAreas }, "Lock now") : h("button", { type: "button", class: "btn small primary", onclick: quickUnlock }, "Unlock") }),
+      lrow({ info: true, ic: "unlock", title: "Stay unlocked for", trail: seg(UNLOCK_CHOICES, unlockHours(), v => { store.set("unlockHours", v); if (areasOpen()) openAreas(); render(); }, "mini") })),
+    h("p", { class: "footnote" }, "The lock at the top of every page unlocks or locks everything in one tap. Your phone can save the team code and fill it in with Face ID."),
     section("Appearance"),
     seg([["system", "System"], ["light", "Light"], ["dark", "Dark"]], store.get("theme", "system"), v => { store.set("theme", v); transition("theme", () => { applyTheme(v); render(); }); }),
     h("p", { class: "footnote" }, "System follows your phone's light or dark mode. Saved on this device."),
@@ -2322,7 +2373,7 @@ function draw(parts, name, fresh) {
   const head = h("header", { class: "top" },
     h("div", { class: "left" }, sub ? h("button", { class: "back", onclick: () => { if (backHref) location.hash = backHref; else if (history.length > 1) history.back(); else location.hash = "#/"; } }, icon("back"), h("span", {}, backLabel)) : null),
     h("span", { class: "title" }, ""),
-    h("div", { class: "right" }, name === "autos" && areasOpen() ? seg([["red", "Red"], ["blue", "Blue"]], side, v => { side = v; store.set("alliance", v); render(); }, "red-blue") : null));
+    h("div", { class: "right" }, name === "autos" && areasOpen() ? seg([["red", "Red"], ["blue", "Blue"]], side, v => { side = v; store.set("alliance", v); render(); }, "red-blue") : null, lockButton()));
   const current = k => isWide ? (k === name || (k === "events" && ["event", "match", "select", "assign"].includes(name)) || (k === "teams" && name === "team")) : k === tab;
   root.replaceChildren(head, h("main", {}, offlineBar(), queueBanner(), content),
     h("nav", { class: "bottom", "aria-label": "Main" }, isWide ? h("div", { class: "navbrand" }, h("b", {}, us()), h("span", {}, "Scout")) : null, (isWide ? NAV_WIDE : NAV).map(([k, label, path]) => h("a", { href: `#/${path}`, "aria-current": current(k) ? "page" : null }, icon(k), label))));

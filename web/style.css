@@ -813,3 +813,10 @@ input[type="password"]:not(:placeholder-shown) { font-size: 16px; -webkit-text-s
 .legend .lg-drv { background: var(--accent); } .legend .lg-prg { background: var(--blue); }
 tr.target td { box-shadow: inset 0 -2px 0 var(--good); }
 .nbtext { white-space: pre-wrap; }
+
+/* ---------- quick unlock (top bar) */
+header.top .right { display: flex; align-items: center; gap: 8px; justify-content: flex-end; }
+.lockbtn { width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); display: grid; place-items: center; cursor: pointer; flex: none; }
+.lockbtn svg { width: 19px; height: 19px; }
+.lockbtn.open { color: var(--good); border-color: transparent; background: rgba(29, 135, 72, 0.12); }
+.pm-user { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }

@@ -406,11 +406,17 @@ async function skillsBoard(teams, us) {
   const stats = await readTeamStats(teams.map(t => t.number));
   const rows = teams.filter(t => stats[t.number] && t.region === config.region).map(t => {
     const st = stats[t.number];
-    return { n: t.number, name: t.name, driver: st.bestDriver || 0, prog: st.bestProg || 0, total: (st.bestDriver || 0) + (st.bestProg || 0) };
+    return { n: t.number, name: t.name, grade: t.grade || "", driver: st.bestDriver || 0, prog: st.bestProg || 0, total: (st.bestDriver || 0) + (st.bestProg || 0) };
   }).filter(r => r.total > 0).sort((a, b) => b.total - a.total || b.prog - a.prog);
   rows.forEach((r, i) => { r.rank = i + 1; });
   const ours = rows.find(r => r.n === us) || null;
-  await db.doc(`meta/skills-${G.key}`).set({ region: config.region, count: rows.length, top: rows.slice(0, 60), ours, updatedAt: FieldValue.serverTimestamp() });
+  // Middle School and High School are ranked (and qualify) separately: a list for each, ranked within it.
+  const byGrade = {};
+  for (const g of ["High School", "Middle School"]) {
+    const list = rows.filter(r => r.grade === g).map((r, i) => ({ ...r, rank: i + 1 }));
+    byGrade[g] = { count: list.length, top: list.slice(0, 60), ours: list.find(r => r.n === us) || null };
+  }
+  await db.doc(`meta/skills-${G.key}`).set({ region: config.region, count: rows.length, top: rows.slice(0, 60), ours, byGrade, updatedAt: FieldValue.serverTimestamp() });
   console.log(`Skills board: ${rows.length} teams in ${config.region}${ours ? `, us #${ours.rank}` : ""}`);
 }
 
