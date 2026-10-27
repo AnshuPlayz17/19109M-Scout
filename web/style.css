@@ -393,6 +393,7 @@ tr.us td .tn { color: var(--accent-text); }
 
 /* ---------- autos */
 .field-wrap { position: relative; }
+.mapnum { display: inline-grid; place-items: center; min-width: 34px; height: 26px; padding: 0 6px; border-radius: 13px; font-weight: 700; font-size: 13px; color: #1b1d22; font-variant-numeric: tabular-nums; }
 svg.fieldplot { width: 100%; height: auto; display: block; border-radius: 8px; }
 .route { transition: opacity 0.15s; }
 .field-wrap[data-path="faint"] .route { opacity: 0.22; }

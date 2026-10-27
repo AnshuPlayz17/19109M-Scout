@@ -914,6 +914,7 @@ function autoList() {
   const groups = ["All", ...new Set(S.autos.autos.map(a => a.group))];
   const shown = S.autos.autos.filter(a => autoGroup === "All" || a.group === autoGroup);
   return [pagehead("Autos", "View only. Tap one to play it on the field."),
+    group(lrow({ href: "#/fieldmap", ic: "autos", title: "Field map", sub: "What Red Goal 2, the bottom toggle, a wall pin… mean" })),
     h("div", { class: "chips" }, groups.map(g => h("button", { type: "button", "aria-pressed": String(g === autoGroup), onclick: () => { autoGroup = g; render(); } }, g))),
     group(...shown.map(a => h("a", { class: "auto-row", href: `#/autos/${a.id}` }, fieldSvg(a, true),
       h("span", { class: "tx" }, h("b", {}, textFor(a.name)), h("span", {}, `${a.time} · ${a.pins} pin${a.pins === 1 ? "" : "s"}${a.rec ? " · build first" : ""}`)),
@@ -2243,9 +2244,75 @@ async function exportScouting(ev) {
   } catch (err) { toast(`Couldn't export: ${err.code || err.message}`, "bad"); }
 }
 
+// ---- field map: the names the autos use for things on the field (red alliance view;
+// Red/Blue at the top mirrors it, like the autos)
+const MAP_KINDS = { // [section title, color, letter on the map]
+  goal: ["Goals", "#f2c94c", "G"], toggle: ["Toggles", "#eb5757", "T"], pin: ["Yellow pins we pick up", "#56ccf2", "P"],
+  cluster: ["Pin clusters (lying down; drive around them)", "#bb6bd9", "C"], other: ["Other", "#d0d0d0", "O"],
+};
+const MAP_ITEMS = [
+  // [kind, name, x, y, note]
+  ["goal", "Red Goal 2", -2 * T, -T, "Our alliance goal below our toggle"],
+  ["goal", "Red Goal 3", -T, -2 * T, "Our alliance goal above the bottom toggle"],
+  ["goal", "Blue Goal 2", 2 * T, T, "Their alliance goal below their toggle"],
+  ["goal", "Blue Goal 3", T, 2 * T, "Their alliance goal next to the top toggle"],
+  ["goal", "Left short goal", -2 * T, T, "Neutral short goal above our toggle"],
+  ["goal", "Top-left short goal", -T, 2 * T, "Neutral short goal by the top toggle"],
+  ["goal", "Right short goal", 2 * T, -T, "Neutral short goal below their toggle"],
+  ["goal", "Bottom-right short goal", T, -2 * T, "Neutral short goal by the bottom toggle"],
+  ["goal", "Tall goal", 0, 0, "Center of the midfield. Its yellow pins count for whoever has more robots in the midfield"],
+  ["toggle", "Our toggle (alliance wall)", -W, 0, "Owns the left quadrant: Red Goal 2 and the left short goal"],
+  ["toggle", "Bottom toggle", 0, -W, "Owns the bottom quadrant: Red Goal 3 and the bottom-right short goal"],
+  ["toggle", "Top toggle", 0, W, "Owns the top quadrant"],
+  ["toggle", "Their toggle (right wall)", W, 0, "Owns the right quadrant"],
+  ["pin", "Wall pin, top-left", -70, T, "On our wall, with a cup each side. Picked by driving straight in at an angle"],
+  ["pin", "Wall pin, bottom-left", -70, -T, "On our wall below the toggle"],
+  ["pin", "Wall pin, bottom (left)", -T, -70, "On the bottom wall"],
+  ["pin", "Wall pin, bottom (right)", T, -70, "On the bottom wall"],
+  ["pin", "Wall pin, top (left)", -T, 70, "On the top wall"],
+  ["pin", "Wall pin, top (right)", T, 70, "On the top wall"],
+  ["pin", "Wall pin, right (top)", 70, T, "On their wall"],
+  ["pin", "Wall pin, right (bottom)", 70, -T, "On their wall"],
+  ["pin", "Yellow pin between the red goals", -2 * T, -2 * T, "Stacked on a cup in the corner of our half"],
+  ["pin", "Yellow pin below the midfield", -T, -T, "Stacked on a cup next to the midfield"],
+  ["pin", "Yellow pin above the midfield", T, T, "Stacked on a cup on their side of the midfield"],
+  ["pin", "Yellow pin, top-right corner", 2 * T, 2 * T, "Stacked on a cup in the corner of their half"],
+  ["cluster", "Pin cluster, top-left", -2 * T, 2 * T, "Blocks the top-left match loader"],
+  ["cluster", "Pin cluster, left", -T, T, "Next to the midfield"],
+  ["cluster", "Pin cluster, right", T, -T, "Next to the midfield"],
+  ["cluster", "Pin cluster, bottom-right", 2 * T, -2 * T, "Corner of their half"],
+  ["other", "Bottom-left match loader (red)", -68.5, -59.5, "The loader our autos use"],
+  ["other", "Top-left match loader (red)", -68.5, 59.5, "Blocked for our robot by the cluster next to it"],
+  ["other", "Midfield corner pins", -T, 0, "Pins at the four corners of the midfield (the diamond)"],
+];
+const mapName = n => side === "blue" ? n.replace(/Red|Blue/g, m => (m === "Red" ? "Blue" : "Red")).replace(/\(red\)/, "(blue)") : n;
+views.fieldmap = () => {
+  const svg = svgEl("svg", { viewBox: `${-23 * PX} ${-22 * PX} ${1514 * PX} ${1508 * PX}`, class: "fieldplot", role: "img", "aria-label": "Field map with labels" });
+  svgEl("image", { href: "field.webp", x: -23 * PX, y: -22 * PX, width: 1514 * PX, height: 1508 * PX, preserveAspectRatio: "none" }, svg);
+  // quadrant names, faint
+  for (const [name, x, y] of [["Left quadrant", -46, 4], ["Bottom quadrant", -4, -38], ["Top quadrant", 4, 38], ["Right quadrant", 46, -4]]) {
+    const [px, py] = side === "blue" ? [-x, -y] : [x, y];
+    svgEl("text", { x: fx(px), y: fy(py), "text-anchor": "middle", "font-size": 3.4, "font-weight": 600, fill: "#ffffff", opacity: 0.55 }, svg).textContent = mapName(name);
+  }
+  // letters, not plain numbers, so they aren't confused with the goal numbers printed on the field
+  const legend = Object.fromEntries(Object.keys(MAP_KINDS).map(k => [k, []]));
+  MAP_ITEMS.forEach(([kind, name, x, y, note]) => {
+    const [, col, letter] = MAP_KINDS[kind], n = letter + (legend[kind].length + 1);
+    const [px, py] = side === "blue" ? [-x, -y] : [x, y];
+    svgEl("rect", { x: fx(px) - 3.9, y: fy(py) - 2.6, width: 7.8, height: 5.2, rx: 2.6, fill: col, stroke: "#1b1d22", "stroke-width": 0.5 }, svg);
+    svgEl("text", { x: fx(px), y: fy(py) + 1.05, "text-anchor": "middle", "font-size": 3, "font-weight": 700, fill: "#1b1d22" }, svg).textContent = n;
+    legend[kind].push(lrow({ info: true, lead: h("span", { class: "mapnum", style: `background:${col}` }, n), title: mapName(name), sub: mapName(note) }));
+  });
+  return [pagehead("Field map", "What the autos mean by Red Goal 2, the bottom toggle, a wall pin and so on. Switch Red/Blue at the top to flip it."),
+    h("div", { class: "field-wrap" }, svg),
+    ...Object.entries(MAP_KINDS).flatMap(([k, [title]]) => [section(title), group(...legend[k])]),
+    h("p", { class: "footnote" }, "Positions come from the field drawing, snapped to the 23.8\" tiles. Coordinates in the autos: inches from the field center, +X right, +Y up.")];
+};
+
 views.more = () => [pagehead("More"),
   group(
     lrow({ href: "#/autos", ic: "autos", title: "Autos", sub: "Our autonomous routes" }),
+    lrow({ href: "#/fieldmap", ic: "autos", title: "Field map", sub: "Names of the goals, toggles and pins the autos use" }),
     lrow({ ic: "chat", title: "Ask Scout", sub: "AI chat about teams, events and picks", onclick: () => openChat() }),
     lrow({ href: "#/skills", ic: "skills", title: "Skills planner", sub: "Our runs vs the region and a target" }),
     lrow({ href: "#/review", ic: "review", title: "Season review", sub: "Results, what changed, notebook entries" }),
