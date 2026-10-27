@@ -1053,7 +1053,7 @@ function autoDetail(a) {
 // ---- checklists (shared by the whole team, live)
 const DEFAULT_LISTS = [
   { name: "Before each match", items: ["Battery fully charged and locked in", "Cascade fully down (the code counts its height from where it starts)", "Preload in the claw",
-    "Zip tie on the front, touching the field perimeter", "Robot centered on the alliance-wall toggle, facing it, about 2\" off",
+    "Zip tie on the front, touching the field perimeter", "Robot centered on the toggle our auto starts at (alliance wall or bottom), facing it, about 2\" off",
     "Brain screen shows the right auto and alliance", "Controller paired and charged", "Partner knows which auto we run and where they start",
     "Spare battery and tools at the field", "All screws tight, nothing dragging"] },
   { name: "Packing list", items: ["Robot", "Controllers (2) and charging cable", "Batteries (all) and charger", "Laptop and USB cable for uploading", "Hex keys, screwdrivers, zip ties",
