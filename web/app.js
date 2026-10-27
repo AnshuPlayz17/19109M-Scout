@@ -915,6 +915,7 @@ views.autos = (id) => {
 };
 // ---- auto picker: filters -> the best auto and backups
 let pickF = { quad: "left", aim: "points", ends: "any", fast: false, ...store.get("autoPick", {}) };
+if (pickF.quad === "top") pickF.quad = "left"; // no top-quadrant autos: it's on the other side of the autonomous line
 const setPick = patch => { pickF = { ...pickF, ...patch }; store.set("autoPick", pickF); render(); };
 const LEVEL = { low: 0, medium: 1, high: 2 };
 function pickAutos(list) {
@@ -937,7 +938,7 @@ function autoPicker(list, onMap = false) {
     onMap ? h("a", { class: "btn small", href: `#/autos/${a.id}` }, "Play") : h("a", { class: "btn small", href: `#/fieldmap/${a.id}` }, "Map"));
   return [section("Pick an auto"),
     h("div", { class: "card picker" },
-      chipRow("We start in", [["left", textFor("Left (our wall)")], ["bottom", textFor("Bottom")], ["top", textFor("Top")], ["skills", "Skills run"]], pickF.quad, v => setPick({ quad: v })),
+      chipRow("We start in", [["left", textFor("Left (our wall)")], ["bottom", textFor("Bottom")], ["skills", "Skills run"]], pickF.quad, v => setPick({ quad: v })),
       chipRow("We want", [["points", "Most points"], ["safe", "Safest"]], pickF.aim, v => setPick({ aim: v })),
       chipRow("End", [["any", "Anywhere"], ["midfield", "In the midfield"], ["loader", "At the loader"]], pickF.ends, v => setPick({ ends: v })),
       chipRow("Robot speed", [[false, "Today's speed"], [true, "Full speed (tuned)"]], pickF.fast, v => setPick({ fast: v }))),
@@ -2312,7 +2313,7 @@ const MAP_ITEMS = [
   ["goal", "Tall goal", 0, 0, "Center of the midfield. Its yellow pins count for whoever has more robots in the midfield"],
   ["toggle", "Our toggle (alliance wall)", -W, 0, "Owns the left quadrant: Red Goal 2 and the left short goal"],
   ["toggle", "Bottom toggle", 0, -W, "Owns the bottom quadrant: Red Goal 3 and the bottom-right short goal"],
-  ["toggle", "Top toggle", 0, W, "Owns the top quadrant"],
+  ["toggle", "Top toggle", 0, W, "Owns the top quadrant (their side of the autonomous line)"],
   ["toggle", "Their toggle (right wall)", W, 0, "Owns the right quadrant"],
   ["pin", "Wall pin, top-left", -70, T, "On our wall, with a cup each side. Picked by driving straight in at an angle"],
   ["pin", "Wall pin, bottom-left", -70, -T, "On our wall below the toggle"],
@@ -2381,6 +2382,14 @@ views.fieldmap = (id = "") => {
     const audTop = store.get("audienceAt", "bottom") === "top";
     lab("Audience", x0 + vw / 2, audTop ? y0 + M / 2 : y0 + vh - M / 2, 0, "var(--muted)");
     lab("Scorekeeper", x0 + vw / 2, audTop ? y0 + vh - M / 2 : y0 + M / 2, 0, "var(--muted)");
+  }
+  { // the autonomous line: the double tape from the top-left corner to the bottom-right one,
+    // around the midfield. In auto each alliance stays on its own side: red has the left and
+    // bottom quadrants, blue the top and right. Shade the other alliance's side.
+    const blue = side === "blue", k = blue ? -1 : 1, col = blue ? "var(--red)" : "var(--blue)";
+    svgEl("polygon", { points: [[-W, W], [W, W], [W, -W]].map(([x, y]) => fx(k * x) + "," + fy(k * y)).join(" "), fill: col, opacity: 0.12 }, svg);
+    [["Their side of the", 31.5], ["autonomous line:", 35], ["don't cross in auto", 38.5]].forEach(([line, y]) =>
+      svgEl("text", { x: fx(k * 36), y: fy(k * 36) + y - 35, "text-anchor": "middle", "font-size": 2.8, "font-weight": 700, fill: "#ffd23f" }, svg).textContent = line);
   }
   // quadrant names, faint
   for (const [name, x, y] of [["Left quadrant", -46, 4], ["Bottom quadrant", -4, -38], ["Top quadrant", 4, 38], ["Right quadrant", 46, -4]]) {
