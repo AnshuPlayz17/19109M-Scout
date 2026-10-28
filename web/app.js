@@ -2518,7 +2518,8 @@ const CONTROLS = [
     ["Y", "Reset: cascade all the way down, then the arm swings in and the claw opens"],
     ["L1 / L2 / R1 / R2", "Stop any macro and take over"]]],
   ["Testing only", [["Left arrow", "Drive test: 24\" forward on its own, result on the brain screen"], ["Right arrow", "Turn test: 90° right on its own, result on the brain screen"],
-    ["Brain screen center button", "Runs the selected auto after a 3 s countdown. Only when not plugged into a field or competition switch"]]],
+    ["Brain screen center button", "Runs the selected auto after a 3 s countdown. Only when not plugged into a field or competition switch"],
+    ["Brain screen left / right", "Left switches red/blue, right steps to the next auto. Line 1 shows the pick"]]],
 ];
 views.controls = () => [pagehead("Controls", "What each controller button does in driver control."),
   ...CONTROLS.flatMap(([title, rows]) => [section(title), group(...rows.map(([key, what]) => lrow({ info: true, lead: h("span", { class: "keycap" }, key), title: what })))]),
