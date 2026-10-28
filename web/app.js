@@ -2519,7 +2519,51 @@ const CONTROLS = [
     ["Brain screen center button", "Runs the selected auto after a 3 s countdown. Only when not plugged into a field or competition switch"],
     ["Brain screen left / right", "Left switches red/blue, right steps to the next auto. Line 1 shows the pick"]]],
 ];
+// The controller picture with a labelled arrow to each button. Picture is 988 x 710 and
+// sits at y = 170 in the drawing; labels go in rows above and below it.
+const CTRL_COLORS = { drive: "#4c9aff", cascade: "#ffb020", claw: "#2ec4b6", macro: "#ff5d73", test: "#9aa0aa" };
+const CTRL_LABELS = [
+  // [button symbol, text, group, label center x, label row y, button x, button y, gap at the button]
+  ["L1", "up · L2 down", "cascade", 230, 40, 225, 30, 6],
+  ["R2", "out · R1 in", "claw", 760, 40, 765, 30, 6],
+  ["", "Drive", "drive", 72, 115, 180, 205, 60],
+  ["up", "Deploy", "cascade", 380, 115, 293, 281, 30],
+  ["X", "Release (hold)", "macro", 610, 115, 693, 282, 30],
+  ["", "Turn", "drive", 916, 115, 818, 205, 60],
+  ["left", "Drive test", "test", 120, 935, 233, 343, 30],
+  ["right", "Turn test", "test", 395, 935, 354, 343, 30],
+  ["Y", "Reset", "macro", 600, 935, 632, 343, 30],
+  ["A", "Drop + reset", "macro", 872, 935, 753, 343, 30],
+  ["down", "Claw open/close", "claw", 255, 1010, 293, 404, 30],
+  ["B", "Pick up", "macro", 722, 1010, 693, 404, 30],
+];
+function controllerDiagram() {
+  const svg = svgEl("svg", { viewBox: "-10 0 1008 1045", class: "ctrlpic", role: "img", "aria-label": "Controller with what each button does" });
+  svgEl("image", { href: "controller.webp", x: 0, y: 170, width: 988, height: 710 }, svg);
+  const tri = { up: "M0 -8 L8 6 L-8 6 Z", down: "M0 8 L8 -6 L-8 -6 Z", left: "M-8 0 L6 -8 L6 8 Z", right: "M8 0 L-6 -8 L-6 8 Z" };
+  for (const [key, text, kind, cx, cy, bx, by0, gap] of CTRL_LABELS) {
+    const by = by0 + 170, col = CTRL_COLORS[kind];
+    const w = (key && !tri[key] ? 56 : key ? 52 : 22) + text.length * 14.6 + 20, top = cy < 500;
+    // arrow from the label's edge to just short of the button
+    const sx = cx, sy = top ? cy + 26 : cy - 26, d = Math.hypot(bx - sx, by - sy), ex = bx - (bx - sx) / d * gap, ey = by - (by - sy) / d * gap;
+    svgEl("line", { x1: sx, y1: sy, x2: ex, y2: ey, stroke: col, "stroke-width": 4, "stroke-linecap": "round" }, svg);
+    svgEl("circle", { cx: ex, cy: ey, r: 7, fill: col, stroke: "#1b1d22", "stroke-width": 2 }, svg);
+    const g = svgEl("g", { transform: `translate(${cx - w / 2} ${cy - 26})` }, svg);
+    svgEl("rect", { width: w, height: 52, rx: 26, fill: "var(--surface)", stroke: col, "stroke-width": 3 }, g);
+    let tx = 20;
+    if (key) {
+      const kw = tri[key] ? 36 : 44;
+      svgEl("rect", { x: 9, y: 8, width: kw, height: 36, rx: 18, fill: "#1b1d22" }, g);
+      if (tri[key]) svgEl("path", { d: tri[key], fill: "#ffffff", transform: `translate(${9 + kw / 2} 26)` }, g);
+      else svgEl("text", { x: 9 + kw / 2, y: 33, "text-anchor": "middle", "font-size": 21, "font-weight": 700, fill: "#ffffff" }, g).textContent = key;
+      tx = 9 + kw + 10;
+    }
+    svgEl("text", { x: tx, y: 35, "font-size": 26, "font-weight": 600, fill: "var(--fg)" }, g).textContent = text;
+  }
+  return h("div", { class: "card ctrlcard" }, svg);
+}
 views.controls = () => [pagehead("Controls", "What each controller button does in driver control."),
+  controllerDiagram(),
   ...CONTROLS.flatMap(([title, rows]) => [section(title), group(...rows.map(([key, what]) => lrow({ info: true, lead: h("span", { class: "keycap" }, key), title: what })))]),
   h("p", { class: "footnote" }, "Matches the robot code on the main branch once the latest robot PR is merged.")];
 

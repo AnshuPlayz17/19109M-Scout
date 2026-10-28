@@ -845,6 +845,8 @@ header.top .right { display: flex; align-items: center; gap: 8px; justify-conten
 .pickitem + .pickitem { border-top: 1px solid var(--sep); }
 .keycap { display: inline-grid; place-items: center; width: 92px; flex: none; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); font-size: 0.75rem; font-weight: 700; text-align: center; line-height: 1.2; }
 .lrow:has(.keycap) .tx b { white-space: normal; overflow: visible; text-overflow: clip; font-weight: 500; }
+.ctrlcard { padding: 10px; }
+.ctrlpic { width: 100%; max-width: 760px; margin-inline: auto; display: block; height: auto; }
 
 /* ---------- next match card on Home: the match number as big as it gets */
 .nextcard { display: flex; flex-direction: column; gap: 18px; padding: 20px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow); position: relative; overflow: hidden; }
