@@ -114,6 +114,7 @@ const ICONS = {
   home: '<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/>',
   events: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
   teams: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.2a5 5 0 0 1 5.5 5.8"/>',
+  controls: '<rect x="2.5" y="7" width="19" height="11" rx="5"/><path d="M7 10.5v4M5 12.5h4"/><circle cx="15.5" cy="11.5" r="1" fill="currentColor"/><circle cx="17.5" cy="13.5" r="1" fill="currentColor"/>',
   fieldmap: '<path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/>',
   autos: '<path d="M5 19c3 0 3-6 7-6s4-6 7-6"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="7" r="2"/>',
   more: '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>',
@@ -1059,16 +1060,25 @@ const DEFAULT_LISTS = [
   { name: "Packing list", items: ["Robot", "Controllers (2) and charging cable", "Batteries (all) and charger", "Laptop and USB cable for uploading", "Hex keys, screwdrivers, zip ties",
     "Spare screws, nuts, standoffs", "Spare motors and cartridges", "Engineering notebook", "Power bar and extension cord", "Team shirts", "Water and snacks"] },
 ];
-// Robot practice for tuning the autos: what to do and what to send back
-const PRACTICE_LIST = { name: "Practice day", items: [
-  "Full battery in the robot", "Merge the latest robot PR, pull, upload with USB on the brain",
-  "Claw flat and cascade fully down before turning the robot on", "Keep the robot still for 3 s at startup (IMU)",
-  "Brain Devices screen: is port 1 (claw arm) showing a motor?", "Third cascade motor: write down its port",
-  "Drive test (Left arrow): photo of the brain screen", "Turn test (Right arrow): photo of the brain screen",
-  "Test B (pick up) and Y (reset) on a stacked pin and cup", "Cascade number at short-goal scoring height",
-  "Cascade number at tall-goal scoring height", "Photo: claw on a pin, tape from robot front to pin center",
-  "Photo: backed onto a goal, tape from robot back to goal center", "Autos on, run Toggle + preload, film it",
-  "Send the photos, numbers and videos to Claude"] };
+// Robot test session, in order: each step needs the one before it to work
+const PRACTICE_LIST = { name: "Robot test day", items: [
+  "Full battery in the robot", "Merge the robot PR (#49), pull, build and upload (pros mu)",
+  "Claw flat and cascade fully down before turning on; keep the robot still for 3 s",
+  "Brain says \"Auto: Easy: toggle + back into the midfield (red)\" (no \"- OFF\")",
+  "Cascade: L1/L2 move it strongly (all 3 motors). Weak or jerky? Tell Claude",
+  "R1/R2: claw arm goes all the way out and all the way in",
+  "B: claw closes, cascade lifts 0.6 s, arm swings out, cascade stays up",
+  "X: hold lowers the cascade; let go opens the claw and goes back up",
+  "A: claw opens, cascade all the way down, arm swings all the way in",
+  "Y resets; Down arrow opens/closes the claw; Up arrow deploys",
+  "Easy auto: centered on the alliance-wall toggle, facing it, 2\" off; tap the brain's center button, step back",
+  "Easy auto: toggle flipped? Went straight? Tape from robot center to tall goal center; brain line 2",
+  "Left arrow (drive test) 3 times: photo of the brain screen each time",
+  "Right arrow (turn test) 3 times: photo of the brain screen each time",
+  "Cascade number at short-goal scoring height", "Cascade number at tall-goal scoring height",
+  "Photo: claw on a pin, tape from robot front to pin center",
+  "Photo: backed onto a goal, tape from robot back to goal center",
+  "Send the notes, numbers, photos and videos to Claude"] };
 const newId = () => Math.random().toString(36).slice(2, 10);
 let listId = store.get("list", ""), editing = false, ticked = {};
 const barAt = {};
@@ -1111,7 +1121,7 @@ views.checklist = () => {
         await setDoc(doc(db, "checklists", id), { name: name.trim().slice(0, 40), order: S.lists.length, items: [], done: {}, by: user.uid, at: serverTimestamp() }); } }, icon("plus"), "New list"),
       S.lists.some(x => x.name === PRACTICE_LIST.name) ? null : h("button", { type: "button", onclick: async () => { const id = newId();
         listId = id; store.set("list", id);
-        await setDoc(doc(db, "checklists", id), { name: PRACTICE_LIST.name, order: S.lists.length, items: PRACTICE_LIST.items.map(text => ({ id: newId(), text })), done: {}, by: user.uid, at: serverTimestamp() }); } }, icon("plus"), "Practice day")),
+        await setDoc(doc(db, "checklists", id), { name: PRACTICE_LIST.name, order: S.lists.length, items: PRACTICE_LIST.items.map(text => ({ id: newId(), text })), done: {}, by: user.uid, at: serverTimestamp() }); } }, icon("plus"), "Robot test day")),
     card(h("div", { class: "row between" }, h("h3", {}, l.name), h("span", { class: "muted num" }, `${count} of ${l.items.length}`)),
       h("div", { class: "progress", role: "progressbar", "aria-label": "Done", "aria-valuenow": count, "aria-valuemax": l.items.length }, bar)),
     group(...rows, l.items.length ? null : h("p", { class: "empty" }, "No items yet. Tap Edit list to add some.")),
@@ -2494,12 +2504,31 @@ views.fieldmap = (id = "") => {
     h("p", { class: "footnote" }, "Positions come from the field drawing, snapped to the 23.8\" tiles. Coordinates in the autos: inches from the field center, +X right, +Y up.")];
 };
 
+// What each controller button does in driver control (the robot repo's src/main.cpp, opcontrol)
+const CONTROLS = [
+  ["Driving", [["Left stick", "Forward / backward"], ["Right stick", "Turn (left / right)"]]],
+  ["Cascade", [["L1 (hold)", "Up, full power"], ["L2 (hold)", "Down, a little slower"], ["Up arrow", "Deploy at the start of a match: lifts for a moment so the stop flips into place, then lowers onto it"]]],
+  ["Claw", [["R2 (hold)", "Arm swings out (75% power, no limits)"], ["R1 (hold)", "Arm swings in"], ["Down arrow", "Claw open / close"]]],
+  ["Macros (one button does several things)", [
+    ["B", "Pick up after match loading: claw closes, cascade lifts for 0.6 s, arm swings all the way out. The cascade stays up"],
+    ["X (hold)", "Release: the cascade lowers while held. Let go: the claw opens and the cascade goes back up to where it was"],
+    ["A", "Drop and reset: the claw opens as the cascade goes all the way down, then the arm swings all the way in"],
+    ["Y", "Reset: cascade all the way down, then the arm swings in and the claw opens"],
+    ["L1 / L2 / R1 / R2", "Stop any macro and take over"]]],
+  ["Testing only", [["Left arrow", "Drive test: 24\" forward on its own, result on the brain screen"], ["Right arrow", "Turn test: 90° right on its own, result on the brain screen"],
+    ["Brain screen center button", "Runs the selected auto after a 3 s countdown. Only when not plugged into a field or competition switch"]]],
+];
+views.controls = () => [pagehead("Controls", "What each controller button does in driver control."),
+  ...CONTROLS.flatMap(([title, rows]) => [section(title), group(...rows.map(([key, what]) => lrow({ info: true, lead: h("span", { class: "keycap" }, key), title: what })))]),
+  h("p", { class: "footnote" }, "Matches the robot code on the main branch once the latest robot PR is merged.")];
+
 views.more = () => [pagehead("More"),
   group(
     lrow({ href: "#/autos", ic: "autos", title: "Autos", sub: "Our autonomous routes" }),
     lrow({ ic: "chat", title: "Ask Scout", sub: "AI chat about teams, events and picks", onclick: () => openChat() }),
     lrow({ href: "#/skills", ic: "skills", title: "Skills planner", sub: "Our runs vs the region and a target" }),
     lrow({ href: "#/review", ic: "review", title: "Season review", sub: "Results, what changed, notebook entries" }),
+    lrow({ href: "#/controls", ic: "controls", title: "Controls", sub: "What each controller button does" }),
     lrow({ href: "#/checklist", ic: "checklist", title: "Checklist", sub: "Before each match, packing list, your own" }),
     lrow({ href: "#/scorer", ic: "scorer", title: "Scorer", sub: "Match timer and score counter" }),
     lrow({ href: "#/predict", ic: "predict", title: "Predictor", sub: "Win chance for any four teams" }),
@@ -2568,14 +2597,14 @@ views.settings = () => {
 
 // Six tabs on phones; the sidebar on wide screens lists everything.
 const NAV = [["home", "Home", ""], ["events", "Events", "events"], ["teams", "Teams", "teams"], ["scout", "Scout", "scout"], ["fieldmap", "Map", "fieldmap"], ["more", "More", "more"]];
-const NAV_WIDE = [["home", "Home", ""], ["events", "Events", "events"], ["teams", "Teams", "teams"], ["scout", "Scout for me", "scout"], ["autos", "Autos", "autos"], ["fieldmap", "Field map", "fieldmap"], ["skills", "Skills planner", "skills"], ["review", "Season review", "review"], ["checklist", "Checklist", "checklist"],
+const NAV_WIDE = [["home", "Home", ""], ["events", "Events", "events"], ["teams", "Teams", "teams"], ["scout", "Scout for me", "scout"], ["autos", "Autos", "autos"], ["fieldmap", "Field map", "fieldmap"], ["skills", "Skills planner", "skills"], ["review", "Season review", "review"], ["controls", "Controls", "controls"], ["checklist", "Checklist", "checklist"],
   ["scorer", "Scorer", "scorer"], ["predict", "Predictor", "predict"], ["board", "Whiteboard", "board"], ["pit", "Pit display", "pit"], ["settings", "Settings", "settings"]];
-const TAB_OF = { skills: "more", review: "more", event: "events", match: "events", select: "events", assign: "events", team: "teams", autos: "more", checklist: "more", scorer: "more", predict: "more", settings: "more", board: "more", pit: "more" };
-const BACK = { skills: ["More", "#/more"], review: ["Back"], event: ["Events", "#/events"], match: ["Back"], select: ["Back"], assign: ["Back"], team: ["Back"], checklist: ["More", "#/more"], scorer: ["More", "#/more"], predict: ["More", "#/more"], settings: ["More", "#/more"] };
+const TAB_OF = { controls: "more", skills: "more", review: "more", event: "events", match: "events", select: "events", assign: "events", team: "teams", autos: "more", checklist: "more", scorer: "more", predict: "more", settings: "more", board: "more", pit: "more" };
+const BACK = { controls: ["More", "#/more"], skills: ["More", "#/more"], review: ["Back"], event: ["Events", "#/events"], match: ["Back"], select: ["Back"], assign: ["Back"], team: ["Back"], checklist: ["More", "#/more"], scorer: ["More", "#/more"], predict: ["More", "#/more"], settings: ["More", "#/more"] };
 const wide = matchMedia("(min-width: 900px)");
 let lastRoute = "", titleObs = null;
 // How deep each page sits, so moving deeper slides in from the right and Back slides the other way.
-const DEPTH = { home: 0, events: 0, teams: 0, autos: 0, scout: 0, fieldmap: 0, more: 0, event: 1, checklist: 1, scorer: 1, predict: 1, settings: 1, board: 1, pit: 1, match: 2, team: 2, select: 2, assign: 2, skills: 1, review: 1 };
+const DEPTH = { controls: 1, home: 0, events: 0, teams: 0, autos: 0, scout: 0, fieldmap: 0, more: 0, event: 1, checklist: 1, scorer: 1, predict: 1, settings: 1, board: 1, pit: 1, match: 2, team: 2, select: 2, assign: 2, skills: 1, review: 1 };
 const calm = matchMedia("(prefers-reduced-motion: reduce)");
 let lastName = "", lastDepth = 0, drawn = false, moving = null;
 /** Runs `change` as an animated transition (View Transitions where the browser has them). */
