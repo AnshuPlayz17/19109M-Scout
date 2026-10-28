@@ -124,6 +124,19 @@ service cloud.firestore {
     // Scout for me reports and match game plans (written by the sync), shared with the whole team.
     match /reports/{d} { allow read: if isMember(); }
     match /plans/{d} { allow read: if isMember(); }
+
+    // Pit display settings, shared so a phone can update the pit laptop: where we are now,
+    // the pit number, a message, and which sections are hidden ("override" / "pushback").
+    match /pit/{game} {
+      allow read: if isMember();
+      allow create, update: if isMember() && game in ['override', 'pushback']
+        && request.resource.data.keys().hasOnly(['where', 'location', 'note', 'hide', 'by', 'nickname', 'at'])
+        && request.resource.data.where is string && request.resource.data.where.size() <= 40
+        && request.resource.data.location is string && request.resource.data.location.size() <= 20
+        && request.resource.data.note is string && request.resource.data.note.size() <= 120
+        && request.resource.data.hide is list && request.resource.data.hide.size() <= 12
+        && request.resource.data.by == request.auth.uid && goodNickname(request.resource.data.nickname);
+    }
     match /reviews/{d} { allow read: if isMember(); }
 
     // Skills runs we log ourselves (practice, or ones not on VEX Events yet), for the skills planner.

@@ -1320,9 +1320,17 @@ import("./vendor/qrcode.js").then(({ default: qrcode }) => {
 let pitLocked = store.get("pitLock", false), unlockTries = 0, unlockWait = 0;
 function lockPit() {
   pitLocked = true; store.set("pitLock", true);
-  document.documentElement.requestFullscreen?.().catch(() => {});
+  goFull();
   render();
 }
+// Full screen, and where the browser allows it (Chrome, Edge) Esc has to be held down to leave
+// instead of a single tap, so a passer-by can't drop out of it by accident.
+function goFull() {
+  document.documentElement.requestFullscreen?.().then(() => navigator.keyboard?.lock?.(["Escape"]).catch(() => {}), () => {});
+}
+// Closing the tab or the window while locked: the browser asks "Leave site?" first. (No web page
+// can demand a code before a tab closes; reopening the app comes straight back to the locked display.)
+addEventListener("beforeunload", e => { if (pitLocked) { e.preventDefault(); e.returnValue = ""; } });
 const sha256 = async text => [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)))].map(b => b.toString(16).padStart(2, "0")).join("");
 /**
  * Checks the team code for the pit display and the locked areas. The app only has the code's
@@ -1373,7 +1381,12 @@ async function openUnlock() {
   document.body.append(bg, box);
   input.focus();
 }
-document.addEventListener("fullscreenchange", () => { if (lastName === "pit") refresh(); });
+// Leaving full screen while locked asks for the code straight away.
+document.addEventListener("fullscreenchange", () => {
+  if (lastName !== "pit") return;
+  if (pitLocked && !document.fullscreenElement) openUnlock();
+  refresh();
+});
 
 // ---- locked areas: Autos, the Whiteboard and our scouting notes need the team code too.
 // Once it's entered they stay open on this device for 12 hours (or a week, or 30 days: the
@@ -1476,7 +1489,46 @@ function pitStatus(fe, ev, next) {
   return ev.ourMatches?.length ? ["Qualifications done", "Alliance selection and eliminations"] : ["At the event", ""];
 }
 
+// ---- what the pit display shows: set with Edit before locking it, shared through pit/<game> so
+// anyone's phone can change "where we are now" while the display is locked at the pit.
+const PIT_SECTIONS = [["rankings", "Rankings"], ["matches", "Coming up and results"], ["rank", "Our rank"], ["record", "Our record"], ["opr", "Our OPR"],
+  ["where", "Where we are now"], ["insta", "Instagram"]];
+const PIT_WHERE = ["In the pit", "Queueing", "On the field", "Skills", "Inspection", "Judging", "Lunch break", "Packing up"];
+const watchPitCfg = () => watch("pitCfg", doc(db, "pit", G.key), s => { S.pitCfg = s.exists() ? s.data({ serverTimestamps: "estimate" }) : null; });
+function editPit() {
+  if (document.querySelector(".sheet.pitedit")) return;
+  const c = S.pitCfg || {}, d = { where: c.where || "", location: c.location || "", note: c.note || "", hide: new Set(c.hide || []) };
+  const close = () => { bg.remove(); box.remove(); };
+  const custom = h("input", { maxlength: 40, placeholder: "Or type it: Fixing the intake", value: PIT_WHERE.includes(d.where) ? "" : d.where, oninput: e => { d.where = e.target.value; drawChips(); } });
+  const chips = h("div", { class: "optchips", role: "group", "aria-label": "Where we are now" });
+  const drawChips = () => chips.replaceChildren(...PIT_WHERE.map(w => h("button", { type: "button", "aria-pressed": String(d.where === w),
+    onclick: () => { d.where = d.where === w ? "" : w; custom.value = ""; drawChips(); } }, w)));
+  drawChips();
+  const bg = h("div", { class: "sheet-bg", onclick: close });
+  const box = h("form", { class: "sheet pitedit", role: "dialog", "aria-modal": "true", "aria-label": "Edit pit display", onsubmit: e => {
+    e.preventDefault();
+    setDoc(doc(db, "pit", G.key), { where: d.where.trim().slice(0, 40), location: d.location.trim().slice(0, 20), note: d.note.trim().slice(0, 120), hide: [...d.hide],
+      by: user.uid, nickname: S.nickname, at: serverTimestamp() }).catch(err => toast(`Couldn't save (${err.code || err.message})`, "bad"));
+    close(); toast("Pit display updated");
+  } },
+    h("div", { class: "head" }, h("h3", {}, "Edit pit display"), h("button", { class: "btn small plain", type: "button", onclick: close }, "Cancel")),
+    h("div", { class: "pitedit-body" },
+      h("div", { class: "field" }, "Where we are now", chips, custom),
+      h("div", { class: "grid2" },
+        h("label", { class: "field" }, "Pit number", h("input", { maxlength: 20, placeholder: "Pit 14", value: d.location, oninput: e => { d.location = e.target.value; } })),
+        h("label", { class: "field" }, "Message", h("input", { maxlength: 120, placeholder: "Come say hi", value: d.note, oninput: e => { d.note = e.target.value; } }))),
+      h("div", { class: "field" }, "Show on the display", h("div", { class: "group-list" }, PIT_SECTIONS.map(([k, label]) =>
+        h("label", { class: "lrow noicon pitcheck" }, h("span", { class: "tx" }, h("b", {}, label)),
+          h("input", { type: "checkbox", class: "check", checked: !d.hide.has(k) || null, onchange: e => { e.target.checked ? d.hide.delete(k) : d.hide.add(k); } }), h("span")))))),
+    h("p", { class: "muted small" }, "Shared with the team: anyone can change \"where we are now\" from their phone and the display updates."),
+    h("button", { class: "btn primary wide", type: "submit" }, "Save"));
+  box.addEventListener("keydown", e => { if (e.key === "Escape") close(); });
+  document.body.append(bg, box);
+}
+
 views.pit = () => {
+  watchPitCfg();
+  const cfg = S.pitCfg || {}, hidden = new Set(cfg.hide || []), show = k => !hidden.has(k);
   const fe = S.status ? focusEvent() : null, ev = fe && S.events[fe.id];
   const ours = ev?.ourMatches?.map(om => ({ om, m: ev.matches.find(x => x.id === om.id) })).filter(x => x.m) || [];
   const todo = ours.filter(x => !x.m.scored), done = ours.filter(x => x.m.scored).reverse();
@@ -1506,8 +1558,14 @@ views.pit = () => {
       h("div", { class: "pit-big small" }, fe ? (live ? "No match scheduled" : fe.name) : "No events yet"),
       fe ? h("span", { class: "pit-when" }, [fmtDates(fe), where_(fe)].filter(Boolean).join(" · ")) : null);
 
-  const stats = h("div", { class: "pit-stats" }, [[r ? `#${r.rank}` : "–", "Rank"], [r ? `${r.wins}-${r.losses}-${r.ties}` : "–", "Record"], 
-    [o?.matches >= 3 ? Math.round(o.opr) : "–", "OPR"]].map(([v, l]) => h("div", {}, h("b", {}, v), h("span", {}, l))));
+  const statList = [show("rank") && [r ? `#${r.rank}` : "–", "Rank"], show("record") && [r ? `${r.wins}-${r.losses}-${r.ties}` : "–", "Record"],
+    show("opr") && [o?.matches >= 3 ? Math.round(o.opr) : "–", "OPR"]].filter(Boolean);
+  const stats = statList.length ? h("div", { class: "pit-stats", style: `grid-template-columns:repeat(${statList.length},1fr)` }, statList.map(([v, l]) => h("div", {}, h("b", {}, v), h("span", {}, l)))) : null;
+  // Where we are now: set by the team (Edit, or anyone's phone).
+  const where = show("where") && (cfg.where || cfg.location || cfg.note)
+    ? h("section", { class: "pit-card pit-where" }, h("span", { class: "eyebrow" }, "Where we are now"),
+      h("b", {}, cfg.where || "In the pit"), cfg.location ? h("span", { class: "loc" }, cfg.location) : null, cfg.note ? h("p", {}, cfg.note) : null)
+    : null;
 
   const mini = (m, om) => {
     const ourScore = m[om.color].score, theirs = m[om.color === "red" ? "blue" : "red"].score;
@@ -1538,16 +1596,22 @@ views.pit = () => {
   const controls = pitLocked
     ? h("div", { class: "pit-controls" }, h("button", { type: "button", class: "wb-btn", "aria-label": "Unlock", title: "Unlock", onclick: openUnlock }, icon("lock"), h("span", {}, "Unlock")))
     : h("div", { class: "pit-controls" },
+      h("button", { type: "button", class: "wb-btn", "aria-label": "Edit pit display", title: "Choose what shows, and where we are", onclick: editPit }, icon("board"), h("span", {}, "Edit")),
       h("button", { type: "button", class: "wb-btn", "aria-label": "Lock and go full screen", title: "Lock: leaving needs the team code", onclick: lockPit }, icon("lock"), h("span", {}, document.fullscreenEnabled ? "Lock & full screen" : "Lock")),
       h("button", { type: "button", class: "wb-btn", "aria-label": "Close pit display", title: "Close", onclick: exitTo }, icon("close"), h("span", {}, "Close")));
   // Locked but out of full screen (someone pressed Esc): offer the way back in, nothing else.
   const relock = pitLocked && document.fullscreenEnabled && !document.fullscreenElement
     ? h("div", { class: "pit-relock" }, h("div", { class: "row" },
-      h("button", { type: "button", class: "btn primary", onclick: () => document.documentElement.requestFullscreen().catch(() => {}) }, icon("expand"), "Back to full screen"),
+      h("button", { type: "button", class: "btn primary", onclick: goFull }, icon("expand"), "Back to full screen"),
       h("button", { type: "button", class: "btn", onclick: openUnlock }, icon("lock"), "Unlock")))
     : null;
 
-  return [head, h("div", { class: "pit-grid" }, nextCard, rankings, stats, matches, insta),
+  // Two rows that close up around hidden sections: the next match, rankings and matches on top;
+  // our numbers, where we are and Instagram underneath.
+  const row = (items, cls) => { const xs = items.filter(([el]) => el); return xs.length ? h("div", { class: `pit-row ${cls}`, style: `grid-template-columns:${xs.map(([, w]) => `minmax(0,${w}fr)`).join(" ")}` }, xs.map(([el]) => el)) : null; };
+  return [head, h("div", { class: "pit-grid" },
+    row([[nextCard, 1.25], [show("rankings") && rankings, 1], [show("matches") && matches, 0.85]], "top"),
+    row([[stats, 1.25], [where, 1], [show("insta") && insta, 0.85]], "bottom")),
     relock, h("p", { class: "pit-foot" }, live || S.status?.alwaysOn ? `${G.name}${live ? " · live" : ""} · results checked every ${checkEvery(live)} · last change ${ago(ev?.updatedAt)}` : `${G.name} ${G.years} · updated ${ago(S.status?.lastQuick || S.status?.lastFull)}`), controls];
 };
 
