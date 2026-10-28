@@ -114,6 +114,7 @@ const ICONS = {
   home: '<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/>',
   events: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
   teams: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17" cy="9" r="2.5"/><path d="M16 14.2a5 5 0 0 1 5.5 5.8"/>',
+  ports: '<rect x="3" y="5" width="18" height="14" rx="2.5"/><rect x="7.5" y="8.5" width="9" height="7" rx="1"/><path d="M6 3v2M9 3v2M12 3v2M15 3v2M18 3v2M6 19v2M9 19v2M12 19v2M15 19v2M18 19v2"/>',
   controls: '<rect x="2.5" y="7" width="19" height="11" rx="5"/><path d="M7 10.5v4M5 12.5h4"/><circle cx="15.5" cy="11.5" r="1" fill="currentColor"/><circle cx="17.5" cy="13.5" r="1" fill="currentColor"/>',
   fieldmap: '<path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/>',
   autos: '<path d="M5 19c3 0 3-6 7-6s4-6 7-6"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="7" r="2"/>',
@@ -2626,6 +2627,73 @@ function controllerDiagram() {
   }
   return h("div", { class: "card ctrlcard" }, svg);
 }
+// Which device is on which brain port (the robot repo's src/main.cpp). Smart ports 1-10 run
+// along the top, 11-20 along the bottom, 21 is on the right; the 3-wire ports A-H are on the left.
+const PORT_KINDS = { drive: ["Drive", "#4c9aff"], cascade: ["Cascade", "#ffb020"], claw: ["Claw", "#2ec4b6"], sensor: ["Sensors", "#a78bfa"], air: ["Pneumatics", "#ff5d73"] };
+const PORTS = [
+  // [port, short label, kind, what it is]
+  [19, "Drive L", "drive", "Left drive motor, 11 W blue, reversed in code"],
+  [10, "Drive L", "drive", "Left drive motor, 11 W blue, reversed in code"],
+  [20, "Drive R", "drive", "Right drive motor, 11 W blue"],
+  [21, "Drive R", "drive", "Right drive motor, 11 W blue"],
+  [15, "Cascade", "cascade", "Cascade motor, 11 W blue (its position is brain screen line 0)"],
+  [11, "Cascade", "cascade", "Cascade motor, 11 W blue, reversed in code"],
+  [13, "Cascade", "cascade", "Cascade motor, 11 W blue"],
+  [1, "Claw arm", "claw", "Claw arm motor, 5.5 W"],
+  [3, "IMU", "sensor", "Inertial sensor (heading)"],
+  [18, "Odom", "sensor", "Tracking wheel rotation sensor, reversed in code"],
+  ["A", "Claw", "air", "Claw piston (extend = open)"],
+];
+function brainDiagram() {
+  // drawn to match the V5 brain photo: dark body, gray faceplate, jacks along the top and
+  // bottom edges with numbered boxes, screen, power button on the right, 3-wire on the left
+  const OX = 110, OY = 120; // room around the brain for labels
+  const svg = svgEl("svg", { viewBox: "0 0 1290 1000", class: "brainpic", role: "img", "aria-label": "V5 brain with the port each device is plugged into" });
+  const g = svgEl("g", { transform: `translate(${OX} ${OY})` }, svg);
+  const used = Object.fromEntries(PORTS.map(p => [p[0], p]));
+  svgEl("rect", { x: 30, y: 45, width: 920, height: 655, rx: 70, fill: "#1f2023" }, g);
+  svgEl("rect", { x: 40, y: 122, width: 880, height: 498, rx: 18, fill: "#55585d" }, g);
+  for (const [x0, x1] of [[140, 432], [458, 752]]) {
+    svgEl("rect", { x: x0, y: 58, width: x1 - x0, height: 56, rx: 4, fill: "#0e0f11" }, g);
+    svgEl("rect", { x: x0, y: 632, width: x1 - x0, height: 56, rx: 4, fill: "#0e0f11" }, g);
+  }
+  svgEl("rect", { x: 122, y: 186, width: 645, height: 370, rx: 6, fill: "#2b2c2f" }, g);
+  const vex = svgEl("text", { x: 818, y: 238, "text-anchor": "middle", "font-size": 40, "font-weight": 700, fill: "#9a9da3", "letter-spacing": 2 }, g);
+  vex.textContent = "VEX";
+  svgEl("rect", { x: 812, y: 330, width: 82, height: 82, rx: 10, fill: "#151618" }, g);
+  svgEl("circle", { cx: 860, cy: 371, r: 20, fill: "none", stroke: "#e6e6e6", "stroke-width": 5 }, g);
+  const xs = [176, 231, 286, 341, 398, 489, 545, 602, 659, 717];
+  const label = (text, col, x, y, rot, anchor) => svgEl("text", { x: x + OX, y: y + OY, "text-anchor": anchor, "font-size": 30, "font-weight": 700, fill: col, transform: `rotate(${rot} ${x + OX} ${y + OY})` }, svg).textContent = text;
+  const port = (n, x, jackY, boxY, top) => {
+    const u = used[n], col = u ? PORT_KINDS[u[2]][1] : null;
+    svgEl("rect", { x: x - 24, y: jackY, width: 48, height: 40, rx: 4, fill: col || "#0a0a0b", stroke: col ? "#ffffff" : "#26272a", "stroke-width": col ? 3 : 1.5 }, g);
+    svgEl("rect", { x: x - 16, y: boxY, width: 32, height: 28, rx: 4, fill: col || "none", stroke: col || "#d4d4d4", "stroke-width": 2 }, g);
+    svgEl("text", { x, y: boxY + 21, "text-anchor": "middle", "font-size": 19, "font-weight": 700, fill: col ? "#1b1d22" : "#e6e6e6" }, g).textContent = n;
+    if (u) top ? label(u[1], col, x + 2, 36, -55, "start") : label(u[1], col, x + 2, 712, 55, "start");
+  };
+  xs.forEach((x, k) => { port(k + 1, x, 66, 136, true); port(k + 11, x, 640, 584, false); });
+  { // port 21, on the right side
+    const u = used[21], col = u ? PORT_KINDS[u[2]][1] : "#0a0a0b";
+    svgEl("rect", { x: 936, y: 470, width: 30, height: 50, rx: 4, fill: col, stroke: "#ffffff", "stroke-width": u ? 3 : 0 }, g);
+    svgEl("text", { x: 951, y: 502, "text-anchor": "middle", "font-size": 18, "font-weight": 700, fill: "#1b1d22" }, g).textContent = 21;
+    if (u) label(`${u[1]} (21)`, col, 976, 503, 0, "start");
+  }
+  "ABCDEFGH".split("").forEach((l, k) => { // 3-wire ports down the left side
+    const u = used[l], col = u ? PORT_KINDS[u[2]][1] : null, y = 255 + k * 33;
+    svgEl("path", { d: `M28 ${y} l14 -12 l0 24 Z`, fill: col || "#9a9da3", stroke: col ? "#ffffff" : "none", "stroke-width": 2 }, g);
+    svgEl("text", { x: 50, y: y + 7, "font-size": 18, "font-weight": 700, fill: col || "#cfd1d4" }, g).textContent = l;
+    if (u) label(`${u[1]} (${l})`, col, 16, y + 8, 0, "end");
+  });
+  return h("div", { class: "card ctrlcard" }, svg);
+}
+views.ports = () => [pagehead("Ports", "What's plugged into each port on the brain."),
+  brainDiagram(),
+  ...Object.entries(PORT_KINDS).flatMap(([k, [title, col]]) => {
+    const rows = PORTS.filter(p => p[2] === k);
+    return [section(title), group(...rows.map(([port, , , what]) => lrow({ info: true, lead: h("span", { class: "keycap", style: `border-color:${col}` }, typeof port === "number" ? `Port ${port}` : `3-wire ${port}`), title: what })))];
+  }),
+  h("p", { class: "footnote" }, "The cascade spool rotation sensor can go in any free port: the code finds it at startup (any rotation sensor except port 18). Check the brain's Devices screen matches this page.")];
+
 views.controls = () => [pagehead("Controls", "What each controller button does in driver control."),
   controllerDiagram(),
   ...CONTROLS.flatMap(([title, rows]) => [section(title), group(...rows.map(([key, what]) => lrow({ info: true, lead: h("span", { class: "keycap" }, key), title: what })))]),
@@ -2638,6 +2706,7 @@ views.more = () => [pagehead("More"),
     lrow({ href: "#/skills", ic: "skills", title: "Skills planner", sub: "Our runs vs the region and a target" }),
     lrow({ href: "#/review", ic: "review", title: "Season review", sub: "Results, what changed, notebook entries" }),
     lrow({ href: "#/controls", ic: "controls", title: "Controls", sub: "What each controller button does" }),
+    lrow({ href: "#/ports", ic: "ports", title: "Ports", sub: "What's plugged into each port on the brain" }),
     lrow({ href: "#/checklist", ic: "checklist", title: "Checklist", sub: "Before each match, packing list, your own" }),
     lrow({ href: "#/scorer", ic: "scorer", title: "Scorer", sub: "Match timer and score counter" }),
     lrow({ href: "#/predict", ic: "predict", title: "Predictor", sub: "Win chance for any four teams" }),
@@ -2706,14 +2775,14 @@ views.settings = () => {
 
 // Six tabs on phones; the sidebar on wide screens lists everything.
 const NAV = [["home", "Home", ""], ["events", "Events", "events"], ["teams", "Teams", "teams"], ["scout", "Scout", "scout"], ["fieldmap", "Map", "fieldmap"], ["more", "More", "more"]];
-const NAV_WIDE = [["home", "Home", ""], ["events", "Events", "events"], ["teams", "Teams", "teams"], ["scout", "Scout for me", "scout"], ["autos", "Autos", "autos"], ["fieldmap", "Field map", "fieldmap"], ["skills", "Skills planner", "skills"], ["review", "Season review", "review"], ["controls", "Controls", "controls"], ["checklist", "Checklist", "checklist"],
+const NAV_WIDE = [["home", "Home", ""], ["events", "Events", "events"], ["teams", "Teams", "teams"], ["scout", "Scout for me", "scout"], ["autos", "Autos", "autos"], ["fieldmap", "Field map", "fieldmap"], ["skills", "Skills planner", "skills"], ["review", "Season review", "review"], ["controls", "Controls", "controls"], ["ports", "Ports", "ports"], ["checklist", "Checklist", "checklist"],
   ["scorer", "Scorer", "scorer"], ["predict", "Predictor", "predict"], ["board", "Whiteboard", "board"], ["pit", "Pit display", "pit"], ["settings", "Settings", "settings"]];
-const TAB_OF = { controls: "more", skills: "more", review: "more", event: "events", match: "events", select: "events", assign: "events", team: "teams", autos: "more", checklist: "more", scorer: "more", predict: "more", settings: "more", board: "more", pit: "more" };
-const BACK = { controls: ["More", "#/more"], skills: ["More", "#/more"], review: ["Back"], event: ["Events", "#/events"], match: ["Back"], select: ["Back"], assign: ["Back"], team: ["Back"], checklist: ["More", "#/more"], scorer: ["More", "#/more"], predict: ["More", "#/more"], settings: ["More", "#/more"] };
+const TAB_OF = { ports: "more", controls: "more", skills: "more", review: "more", event: "events", match: "events", select: "events", assign: "events", team: "teams", autos: "more", checklist: "more", scorer: "more", predict: "more", settings: "more", board: "more", pit: "more" };
+const BACK = { ports: ["More", "#/more"], controls: ["More", "#/more"], skills: ["More", "#/more"], review: ["Back"], event: ["Events", "#/events"], match: ["Back"], select: ["Back"], assign: ["Back"], team: ["Back"], checklist: ["More", "#/more"], scorer: ["More", "#/more"], predict: ["More", "#/more"], settings: ["More", "#/more"] };
 const wide = matchMedia("(min-width: 900px)");
 let lastRoute = "", titleObs = null;
 // How deep each page sits, so moving deeper slides in from the right and Back slides the other way.
-const DEPTH = { controls: 1, home: 0, events: 0, teams: 0, autos: 0, scout: 0, fieldmap: 0, more: 0, event: 1, checklist: 1, scorer: 1, predict: 1, settings: 1, board: 1, pit: 1, match: 2, team: 2, select: 2, assign: 2, skills: 1, review: 1 };
+const DEPTH = { ports: 1, controls: 1, home: 0, events: 0, teams: 0, autos: 0, scout: 0, fieldmap: 0, more: 0, event: 1, checklist: 1, scorer: 1, predict: 1, settings: 1, board: 1, pit: 1, match: 2, team: 2, select: 2, assign: 2, skills: 1, review: 1 };
 const calm = matchMedia("(prefers-reduced-motion: reduce)");
 let lastName = "", lastDepth = 0, drawn = false, moving = null;
 /** Runs `change` as an animated transition (View Transitions where the browser has them). */

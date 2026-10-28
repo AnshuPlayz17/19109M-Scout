@@ -895,3 +895,4 @@ header.top .right { display: flex; align-items: center; gap: 8px; justify-conten
 .pitedit-body { display: flex; flex-direction: column; gap: 14px; overflow-y: auto; min-height: 0; }
 .pitedit .optchips { margin-bottom: 4px; }
 .pitcheck { cursor: pointer; grid-template-columns: minmax(0, 1fr) auto 0; }
+.brainpic { width: 100%; max-width: 640px; margin-inline: auto; display: block; height: auto; }
