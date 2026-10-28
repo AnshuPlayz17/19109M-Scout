@@ -190,7 +190,7 @@ export function createBoard({ h, icon, onIdle, field: fieldImage = "field.webp",
       const s = n * 0.125, x = t.x * n - s / 2, y = t.y * n - s / 2;
       ctx.fillStyle = t.color === "red" ? "rgba(229,72,77,0.85)" : "rgba(62,123,255,0.85)"; ctx.strokeStyle = "#fff"; ctx.lineWidth = 4;
       ctx.beginPath(); ctx.roundRect(x, y, s, s, 14); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = "#fff"; ctx.font = `700 ${Math.min(44, s / (String(t.label).length * 0.55))}px "Barlow Semi Condensed", sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillStyle = "#fff"; ctx.font = `700 ${Math.min(44, s / (String(t.label).length * 0.55))}px Geist, system-ui, sans-serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillText(t.label, t.x * n, t.y * n);
     }
     const blob = await new Promise(r => c.toBlob(r, "image/png"));
