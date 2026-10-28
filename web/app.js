@@ -1045,9 +1045,10 @@ function autoDetail(a) {
       h("div", { class: "col" },
         card(h("p", {}, textFor(a.summary)), h("p", { class: "small" }, h("b", {}, "Scores: "), textFor(a.score)), h("p", { class: "small" }, h("b", {}, "Risk: "), a.risk)),
         card(h("h3", {}, "Run it on the robot"),
-          h("p", { class: "small" }, "Every auto is in one program. To pick this one, set these two lines in include/autons.hpp, then build and upload:"),
+          h("p", { class: "small" }, "On the brain screen (no upload needed): tap the right button until line 1 says ", h("b", {}, `Auto: ${a.name} (${side})`), ". The left button switches red/blue. At practice, the center button runs it after a 3 s countdown."),
+          h("p", { class: "small" }, "Or make it the auto the robot starts with: set these two lines in include/autons.hpp, then build and upload:"),
           h("pre", {}, `constexpr Auto SELECTED_AUTO = Auto::${autoEnum(a.id)};\nconstexpr Alliance ALLIANCE = Alliance::${side === "blue" ? "BLUE" : "RED"};`),
-          h("p", { class: "muted small" }, "The brain screen shows which auto and alliance are loaded. Check it before you queue.")),
+          h("p", { class: "muted small" }, "Check line 1 of the brain screen before you queue.")),
         section("Steps"), steps))];
 }
 
@@ -1071,6 +1072,7 @@ const PRACTICE_LIST = { name: "Robot test day", items: [
   "X: hold lowers the cascade; let go opens the claw and goes back up",
   "A: claw opens, cascade all the way down, arm swings all the way in",
   "Y resets; Down arrow opens/closes the claw; Up arrow deploys",
+  "Brain screen buttons: right steps to the next auto, left switches red/blue (line 1 shows the pick)",
   "Easy auto: centered on the alliance-wall toggle, facing it, 2\" off; tap the brain's center button, step back",
   "Easy auto: toggle flipped? Went straight? Tape from robot center to tall goal center; brain line 2",
   "Left arrow (drive test) 3 times: photo of the brain screen each time",
