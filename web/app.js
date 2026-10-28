@@ -2641,7 +2641,8 @@ const PORTS = [
   [13, "Cascade", "cascade", "Cascade motor, 11 W blue"],
   [1, "Claw arm", "claw", "Claw arm motor, 5.5 W"],
   [3, "IMU", "sensor", "Inertial sensor (heading)"],
-  [18, "Odom", "sensor", "Tracking wheel rotation sensor, reversed in code"],
+  [2, "Odom", "sensor", "Tracking wheel rotation sensor, reversed in code"],
+  [14, "Spool", "sensor", "Cascade spool rotation sensor"],
   ["A", "Claw", "air", "Claw piston (extend = open)"],
 ];
 function brainDiagram() {
@@ -2692,7 +2693,7 @@ views.ports = () => [pagehead("Ports", "What's plugged into each port on the bra
     const rows = PORTS.filter(p => p[2] === k);
     return [section(title), group(...rows.map(([port, , , what]) => lrow({ info: true, lead: h("span", { class: "keycap", style: `border-color:${col}` }, typeof port === "number" ? `Port ${port}` : `3-wire ${port}`), title: what })))];
   }),
-  h("p", { class: "footnote" }, "The cascade spool rotation sensor can go in any free port: the code finds it at startup (any rotation sensor except port 18). Check the brain's Devices screen matches this page.")];
+  h("p", { class: "footnote" }, "Check the brain's Devices screen matches this page.")];
 
 views.controls = () => [pagehead("Controls", "What each controller button does in driver control."),
   controllerDiagram(),
