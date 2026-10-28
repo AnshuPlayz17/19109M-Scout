@@ -839,8 +839,6 @@ header.top .right { display: flex; align-items: center; gap: 8px; justify-conten
 .mapeq { text-align: center; font-size: 0.875rem; font-weight: 600; color: var(--muted); margin: 6px 0 0; }
 .mapsteps .lrow.on { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--accent-text); }
 .pickitem + .pickitem { border-top: 1px solid var(--sep); }
-
-/* =====================================================================================
    Redesign layer: Swiss-minimal. Cards are plain surfaces (no borders), headings are
    sentence case, numbers use Geist's tabular figures, and less is shown at once.
    ===================================================================================== */
@@ -938,3 +936,8 @@ nav.bottom a[aria-current="page"] { color: var(--fg); font-weight: 600; }
 .page-pit .pit-stats > div:first-child b { color: var(--fg); }
 .page-pit .pit-m b { white-space: nowrap; }
 .page-pit .eyebrow { text-transform: none; letter-spacing: 0; }
+=======
+.keycap { display: inline-grid; place-items: center; width: 92px; flex: none; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-2); font-size: 0.75rem; font-weight: 700; text-align: center; line-height: 1.2; }
+.lrow:has(.keycap) .tx b { white-space: normal; overflow: visible; text-overflow: clip; font-weight: 500; }
+
+/* ==============================================================================
