@@ -170,7 +170,7 @@ const store = {
 const applyTheme = t => {
   if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
   const dark = t === "dark" || (t !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
-  document.querySelectorAll('meta[name="theme-color"]').forEach(m => m.setAttribute("content", dark ? "#111113" : "#f5f5f4"));
+  document.querySelectorAll('meta[name="theme-color"]').forEach(m => m.setAttribute("content", dark ? "#0c0d0f" : "#f2f3f5"));
 };
 applyTheme(store.get("theme", "system"));
 matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => applyTheme(store.get("theme", "system")));
@@ -395,9 +395,9 @@ function pickTeam({ title, teams, onPick }) {
 const views = {};
 
 views.home = () => {
-  const out = [h("header", { class: "teamhead" }, h("p", {}, S.status?.team?.name || "UTS Circuit Breakers"), h("h1", {}, S.status?.team?.number || "19109M"),
-    G.key !== "override" ? h("a", { class: `gamechip ${G.key}`, href: "#/settings", title: "Change game in Settings" }, `${G.name} · ${G.years}`) : null)];
-  if (S.status === undefined) return [...out, ...skeleton(60, 220, 80)];
+  const out = [h("header", { class: "teamhead" }, h("h1", {}, S.status?.team?.number || "19109M"), h("p", {}, S.status?.team?.name || "UTS Circuit Breakers"),
+    h("a", { class: `gamechip ${G.key}`, href: "#/settings", title: "Change game in Settings" }, `${G.name} · ${G.years}`))];
+  if (S.status === undefined) return [...out, ...skeleton(150, 200, 160)];
   if (S.status === null) {
     out.push(notice("On GitHub, open Actions → Scout sync → Run workflow, mode full. Your events show up here when it finishes.", "Waiting for the first data sync", "refresh"));
     return out;
@@ -408,62 +408,57 @@ views.home = () => {
   if (S.admin && S.codeRequests?.length) out.push(h("a", { class: "notice admin-ask", href: "#/settings" }, h("b", {},
     `${S.codeRequests.length === 1 ? `${S.codeRequests[0].nickname} is` : `${S.codeRequests.length} people are`} asking for the team code`), h("span", {}, "Open Settings to see who, and to see the code.")));
 
-  // The event that matters now, as one line.
+  // The event that matters now, with where we stand at it.
   if (fe) {
-    const live = isLive(fe);
-    out.push(h("a", { class: `evline${live ? " live" : ""}`, href: `#/event/${fe.id}` }, live ? h("span", { class: "dot", "aria-hidden": "true" }) : null,
-      h("span", { class: "tx" }, `${fe.name} · ${live ? "Live" : ms(fe.start) > Date.now() ? until(fe.start) : fmtDates(fe)}`), icon("chev", "chev")));
+    const live = isLive(fe), r = ev?.rankings?.find(x => x.team === us()), o = ev?.oprs?.[us()];
+    const status = live ? "Live now" : ms(fe.start) > Date.now() ? `Next event · ${until(fe.start)}` : "Last event";
+    out.push(h("a", { class: `evcard${live ? " live" : ""}`, href: `#/event/${fe.id}` },
+      h("div", { class: "evtop" }, h("span", { class: "status" }, status), icon("chev", "chev")),
+      h("h2", {}, fe.name),
+      h("p", {}, [fmtDates(fe), where_(fe), ev?.teams?.length ? `${ev.teams.length} teams` : null].filter(Boolean).join(" · ")),
+      r ? glance([[`#${r.rank}`, "Rank", "accent"], [`${r.wins}-${r.losses}-${r.ties}`, "Record"], [r.wp, "WP"], [o?.matches >= 3 ? Math.round(o.opr) : "–", "OPR"]]) : null));
   }
-  if (fe && ev === undefined) left.push(...skeleton(220, 80));
+  if (fe && ev === undefined) left.push(...skeleton(200, 160));
   const mineCard = myScouting(fe);
-  const r = ev?.rankings?.find(x => x.team === us()), o = ev?.oprs?.[us()];
-  const stats = r ? h("div", { class: "statrow" },
-    h("div", {}, h("b", {}, `#${r.rank}`), h("span", {}, `Rank of ${ev.teams.length}`)),
-    h("div", {}, h("b", {}, `${r.wins}–${r.losses}${r.ties ? `–${r.ties}` : ""}`), h("span", {}, "Record")),
-    h("div", {}, h("b", {}, o?.matches >= 3 ? Math.round(o.opr) : "–"), h("span", {}, "OPR"))) : null;
-  // One of our matches as a short row: name, side and partner (or the score), win chance.
-  const mini = ({ om, m }) => {
-    const ourScore = m[om.color].score, theirs = m[om.color === "red" ? "blue" : "red"].score;
-    const side = `${om.color === "red" ? "Red" : "Blue"}${om.partners.length ? ` · with ${om.partners.join(", ")}` : ""}`;
-    return h("a", { class: "mini", href: `#/match/${ev.id}/${m.id}` }, h("b", {}, shortName(m.name)),
-      h("span", { class: "tx" }, m.scored ? `${ourScore > theirs ? "Won" : ourScore < theirs ? "Lost" : "Tied"} ${ourScore}–${theirs}` : `${side}${m.scheduled ? ` · ${fmtTime(m.scheduled)}` : ""}`),
-      m.scored ? h("span", { class: `wl ${ourScore > theirs ? "w" : ourScore < theirs ? "l" : ""}` }, ourScore > theirs ? "W" : ourScore < theirs ? "L" : "T")
-        : om.win !== null ? h("span", { class: `pc ${om.win >= 0.5 ? "good-t" : "bad-t"}` }, pct(om.win)) : h("span"));
-  };
+  if (mineCard) left.push(mineCard);
+  // Before the match list is out: our season so far, and who to look out for at the event.
+  if (!ev?.ourMatches?.length) {
+    watchTeam(us());
+    const st = S.stats[us()];
+    if (st) left.push(section("Our season"), glance([[`${st.wins}-${st.losses}-${st.ties}`, "Record"], [st.events, st.events === 1 ? "Event" : "Events"],
+      [st.bestRank ? `#${st.bestRank}` : "–", "Best rank"], [st.bestDriver + st.bestProg || "–", "Best skills"]]));
+    const rivals = (ev?.teams || []).filter(t => t.number !== us()).sort((a, b) => (ev.ratings?.[b.number]?.rating ?? 0) - (ev.ratings?.[a.number]?.rating ?? 0));
+    if (rivals.length) left.push(section("Teams to watch", h("a", { href: `#/event/${ev.id}/teams` }, `All ${ev.teams.length}`)), group(...rivals.slice(0, 6).map(t => teamRow(t, ev))),
+      h("p", { class: "footnote" }, "Strongest first, from season record and skills. Updates with match results once the event starts."));
+  }
   if (ev?.ourMatches?.length) {
     const ours = ev.ourMatches.map(om => ({ om, m: ev.matches.find(x => x.id === om.id) })).filter(x => x.m);
     const todo = ours.filter(x => !x.m.scored), done = ours.filter(x => x.m.scored).reverse();
     if (todo.length) {
       const { om, m } = todo[0];
       const names = ns => ns.map(n => n === us() ? "Us" : teamName(n) || "").filter(Boolean).join(" · ");
-      left.push(h("a", { class: `nextcard ${om.color}`, href: `#/match/${ev.id}/${m.id}` },
+      left.push(section("Next match"), h("a", { class: `nextcard ${om.color}`, href: `#/match/${ev.id}/${m.id}` },
         h("div", { class: "top" },
-          h("div", { class: "what" }, h("span", { class: `side ${om.color}-t` }, `Next · ${om.color === "red" ? "Red" : "Blue"} alliance`), h("span", { class: "big" }, shortName(m.name)),
+          h("div", { class: "what" }, h("span", { class: `side ${om.color}-t` }, `${om.color === "red" ? "Red" : "Blue"} alliance`), h("span", { class: "big" }, shortName(m.name)),
             h("span", { class: "when" }, [m.scheduled && fmtTime(m.scheduled), m.scheduled && until(m.scheduled), m.field].filter(Boolean).join(" · "))),
           om.win !== null ? h("div", { class: "chance" }, h("b", { class: om.win >= 0.5 ? "good-t" : "bad-t" }, pct(om.win)), h("span", {}, "to win")) : null),
         h("div", { class: "vs" },
-          h("div", {}, h("span", {}, "With"), h("b", {}, om.partners.join(" · ") || "—"), h("small", {}, names(om.partners))),
+          h("div", {}, h("span", {}, "With"), h("b", {}, [us(), ...om.partners].join(" · ")), h("small", {}, names([us(), ...om.partners]))),
           h("div", {}, h("span", {}, "Against"), h("b", {}, om.opponents.join(" · ")), h("small", {}, names(om.opponents))))));
     }
-    if (stats) left.push(stats);
-    if (mineCard) left.push(mineCard);
-    if (todo.length > 1) right.push(section("Later", h("a", { href: `#/event/${ev.id}/ours` }, "All matches")), h("div", { class: "minis" }, todo.slice(1, 3).map(mini)));
-    if (done.length) right.push(section(done.length > 1 ? "Latest results" : "Last result"), h("div", { class: "minis" }, done.slice(0, todo.length ? 1 : 3).map(mini)));
-  } else {
-    if (stats) left.push(stats);
-    if (mineCard) left.push(mineCard);
-    // Before the match list is out: our season so far, and who to look out for at the event.
-    watchTeam(us());
-    const st = S.stats[us()];
-    if (st) left.push(h("div", { class: "statrow" },
-      h("div", {}, h("b", {}, `${st.wins}–${st.losses}`), h("span", {}, "Season")),
-      h("div", {}, h("b", {}, st.bestRank ? `#${st.bestRank}` : "–"), h("span", {}, "Best rank")),
-      h("div", {}, h("b", {}, st.bestDriver + st.bestProg || "–"), h("span", {}, "Best skills"))));
-    const rivals = (ev?.teams || []).filter(t => t.number !== us()).sort((a, b) => (ev.ratings?.[b.number]?.rating ?? 0) - (ev.ratings?.[a.number]?.rating ?? 0));
-    if (rivals.length) right.push(section("Teams to watch", h("a", { href: `#/event/${ev.id}/teams` }, `All ${ev.teams.length}`)), group(...rivals.slice(0, 4).map(t => teamRow(t, ev))));
-    if (!fe) right.push(notice("When we register for an event it shows up here.", "No events yet", "calendar"));
+    const all = h("a", { href: `#/event/${ev.id}/ours` }, "See all");
+    if (todo.length > 1) left.push(section("Coming up", all), matchList(ev, todo.slice(1, 4).map(x => x.m), { mark: false }));
+    if (done.length) left.push(section("Results", todo.length > 1 ? null : all), matchList(ev, done.slice(0, 4).map(x => x.m), { mark: false }));
   }
-  return [...out, h("div", { class: "cols home" }, h("div", { class: "col" }, ...left), h("div", { class: "col" }, ...right))];
+
+  const tool = (href, ic, label, sub) => h("a", { class: "tool", href }, h("span", { class: "tico" }, icon(ic)), h("span", { class: "tx" }, h("b", {}, label), h("span", {}, sub)));
+  right.push(h("div", { class: "tools" },
+    tool("#/checklist", "checklist", "Checklist", "Before each match"), tool("#/scorer", "scorer", "Scorer", "Timer and points"),
+    tool("#/predict", "predict", "Predictor", "Any four teams"), tool("#/autos", "autos", "Autos", "Our routes"),
+    tool("#/board", "board", "Whiteboard", "Draw on the field"), tool("#/pit", "pit", "Pit display", "Leave it at the pit")));
+  right.push(section("Our events", h("a", { href: "#/events" }, "All events")), group(...ourEvents().map(eventRow)));
+  right.push(h("p", { class: "footnote" }, (fe && isLive(fe)) || S.status.alwaysOn ? `Checking for new results every ${checkEvery(fe && isLive(fe))} · ${S.status.season?.name || ""}` : `${S.status.season?.name || ""} · updated ${ago(S.status.lastQuick)}`));
+  return [...out, h("div", { class: "cols" }, h("div", { class: "col" }, ...left), h("div", { class: "col" }, ...right))];
 };
 
 let evQuery = "", evFilter = "region", evWhen = G.key === "override" ? "upcoming" : "any"; // last season is all in the past
@@ -793,7 +788,7 @@ views.team = n => {
     toast(navigator.onLine ? `Note on ${n} saved` : `Saved on this phone. It sends when you're back online.`);
     draft[n] = null; render();
   } },
-    h("div", { class: "row between" }, h("h3", {}, `Scout ${n}`), h("button", { type: "button", class: "btn small plain", onclick: () => { d.open = false; render(); } }, "Cancel")),
+    h("h3", {}, `Scout ${n}`),
     h("div", { class: "grid2", style: "align-items:end" },
       h("label", { class: "field" }, "Match", h("input", { value: d.match, placeholder: "Q12", maxlength: 20, autocapitalize: "characters", oninput: e => { d.match = e.target.value; } })),
       h("div", { class: "field" }, `${PIECE[0].toUpperCase() + PIECE.slice(1)}s in auto`, h("div", { class: "stepper" },
@@ -813,8 +808,7 @@ views.team = n => {
       })())),
     h("label", { class: "field" }, "Notes", h("textarea", { maxlength: 1000, placeholder: "Driving, defense, what they score, anything breaking", oninput: e => { d.notes = e.target.value; } }, d.notes)),
     msg, h("button", { class: "btn primary wide", type: "submit" }, "Save note"));
-  // The form opens from a button, so the page isn't a wall of fields.
-  right.push(d.open ? form : h("button", { type: "button", class: "btn primary wide", onclick: () => { d.open = true; render(); } }, icon("plus"), `Scout ${n}`), pitCard(n, open));
+  right.push(pitCard(n, open), form);
   if (!open && sc.length) right.push(areaGate("Our scouting", `${sc.length} note${sc.length === 1 ? "" : "s"} on ${n} from the team.`, { focus: false }));
   else if (sc.length) right.push(section(`Our scouting · ★ ${avg.toFixed(1)}`), group(...sc.map(x => h("div", { class: "note" },
     h("div", { class: "meta" }, h("b", {}, x.nickname), h("span", { class: "muted small" }, [x.match, ago(x.at)].filter(Boolean).join(" · ")),
