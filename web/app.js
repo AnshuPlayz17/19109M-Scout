@@ -2572,17 +2572,17 @@ views.fieldmap = (id = "") => {
 // What each controller button does in driver control (the robot repo's src/main.cpp, opcontrol)
 const CONTROLS = [
   ["Driving", [["Left stick", "Forward / backward"], ["Right stick", "Turn (left / right)"]]],
-  ["Cascade", [["L2 (hold)", "Up, full power. No limits: let go at the top"], ["L1 (hold)", "Down, a little slower. No limits: let go at the hardstop"], ["Up arrow", "Deploy at the start of a match: lifts for a moment so the stop flips into place, then lowers onto it"]]],
-  ["Claw", [["R1 (hold)", "Arm swings out, full power, no limits. Let go: it holds its angle"], ["R2 (hold)", "Arm swings in"], ["Down arrow", "Claw open / close"]]],
+  ["Cascade", [["L2 (hold)", "Up, full power. No limits: let go at the top"], ["L1 (hold)", "Down, a little slower. No limits: let go at the hardstop"],
+    ["B", "Cascade to the middle height"], ["Y", "Cascade to the top"],
+    ["Up arrow", "Deploy at the start of a match: lifts for a moment so the stop flips into place, then lowers onto it"]]],
+  ["Claw", [["Right arrow (hold)", "Arm out, full power, no limits. Let go: it holds its angle"], ["Left arrow (hold)", "Arm in"], ["Down arrow", "Claw open / close"]]],
   ["Macros (one button does several things)", [
-    ["B", "Pick up after match loading: claw closes, arm goes to its start angle, cascade lifts; partway up the arm swings all the way out (full power). Then it waits there"],
-    ["X (hold)", "Release: the cascade lowers while held. Let go: the claw opens and the cascade goes back up. Then once you've driven 6\" away: cascade all the way down, and the moment it's on the hardstop the arm swings in, claw open, ready for the match loader"],
-    ["Right arrow", "Field stack pick-up: raises the cascade to clear the stack if it's low, swings the arm out with the claw open if it's in, then waits. Drive onto the stack: when the sensors see it (or press B) the cascade goes down around it, the claw closes, and it goes back up. Right again cancels"],
+    ["R1", "Pick up after match loading: claw closes, arm goes to its start angle, cascade lifts; partway up the arm goes all the way out (full speed). Then it waits there"],
+    ["R2 (hold)", "Release: the cascade lowers while held. Let go: the claw opens and the cascade goes back up. Then once you've driven 6\" away: cascade all the way down, and the moment it's on the hardstop the arm goes to the loading angle, claw open, ready for the match loader"],
     ["A", "Drop and reset: the claw opens as the cascade goes all the way down, then the arm swings all the way in"],
-    ["Y", "Reset: cascade all the way down, then the arm swings in and the claw opens"],
-    ["L1 / L2 / R1 / R2", "Stop any macro and take over"]]],
-  ["Testing only", [["Left arrow (tap)", "Drive test: 24\" forward on its own, result on the brain screen"], ["Left arrow (hold 1 s)", "Turn test: 90° right on its own, result on the brain screen"],
-    ["L1 + L2 + R1 + R2 (hold 1 s)", "Runs the picked auto after a 3 s countdown. Only when not plugged into a field or competition switch"]]],
+    ["L1 / L2 / Left / Right", "Stop any macro and take over"]]],
+  ["Testing (hold L1 + L2)", [["L1 + L2, tap Right arrow", "Drive test: 24\" forward on its own, result on the brain screen"], ["L1 + L2, tap Left arrow", "Turn test: 90° right on its own, result on the brain screen"],
+    ["L1 + L2 (hold 1 s)", "Runs the picked auto after a 3 s countdown. Only when not plugged into a field or competition switch"]]],
   ["Picking the auto (no upload)", [["Brain screen left / right", "Previous / next auto (only the event autos)"], ["Brain screen center", "Switch red / blue"],
     ["Left / Right arrows (on the field)", "Before a match, while the robot is disabled: previous / next auto"], ["A (on the field)", "Before a match: switch red / blue"],
     ["Controller screen", "Shows the pick, e.g. \"AUTO 2/8 RED\" and \"Bottom: preload G3\""]]],
@@ -2593,17 +2593,16 @@ const CTRL_COLORS = { drive: "#4c9aff", cascade: "#ffb020", claw: "#2ec4b6", mac
 const CTRL_LABELS = [
   // [button symbol, text, group, label center x, label row y, button x, button y, gap at the button]
   ["L2", "up · L1 down", "cascade", 230, 40, 225, 30, 6],
-  ["R1", "out · R2 in", "claw", 760, 40, 765, 30, 6],
+  ["R1", "pick up · R2 release", "macro", 745, 40, 765, 30, 6],
   ["", "Drive", "drive", 72, 115, 180, 205, 60],
   ["up", "Deploy", "cascade", 380, 115, 293, 281, 30],
-  ["X", "Release (hold)", "macro", 610, 115, 693, 282, 30],
   ["", "Turn", "drive", 916, 115, 818, 205, 60],
-  ["left", "Tests", "test", 120, 935, 233, 343, 30],
-  ["right", "Field pick-up", "macro", 395, 935, 354, 343, 30],
-  ["Y", "Reset", "macro", 612, 935, 632, 343, 30],
-  ["A", "Drop + reset", "macro", 872, 935, 753, 343, 30],
+  ["left", "Arm in", "claw", 120, 935, 233, 343, 30],
+  ["right", "Arm out", "claw", 380, 935, 354, 343, 30],
+  ["Y", "Cascade top", "cascade", 592, 935, 632, 343, 30],
+  ["A", "Drop + reset", "macro", 860, 935, 753, 343, 30],
   ["down", "Claw open/close", "claw", 255, 1010, 293, 404, 30],
-  ["B", "Pick up", "macro", 722, 1010, 693, 404, 30],
+  ["B", "Cascade middle", "cascade", 722, 1010, 693, 404, 30],
 ];
 function controllerDiagram() {
   const svg = svgEl("svg", { viewBox: "-10 0 1008 1045", class: "ctrlpic", role: "img", "aria-label": "Controller with what each button does" });
