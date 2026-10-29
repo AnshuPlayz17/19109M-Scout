@@ -2576,7 +2576,7 @@ const CONTROLS = [
   ["Claw", [["R2 (hold)", "Arm swings out, full power, no limits. Let go: it holds its angle"], ["R1 (hold)", "Arm swings in"], ["Down arrow", "Claw open / close"]]],
   ["Macros (one button does several things)", [
     ["B", "Pick up after match loading: claw closes, cascade lifts for 0.6 s, arm swings all the way out. The cascade stays up"],
-    ["X (hold)", "Release: the cascade lowers while held. Let go: the claw opens and the cascade goes back up. Then once you've driven 8\" away: cascade all the way down, arm swings in, claw open, ready for the match loader"],
+    ["X (hold)", "Release: the cascade lowers while held. Let go: the claw opens and the cascade goes back up. Then once you've driven 6\" away: cascade all the way down, and the moment it's on the hardstop the arm swings in, claw open, ready for the match loader"],
     ["Right arrow", "Field stack pick-up: raises the cascade to clear the stack if it's low, swings the arm out with the claw open if it's in, then waits. Drive onto the stack: it grabs when the sensors see it (or press B) and lifts a little. Right again cancels"],
     ["A", "Drop and reset: the claw opens as the cascade goes all the way down, then the arm swings all the way in"],
     ["Y", "Reset: cascade all the way down, then the arm swings in and the claw opens"],
