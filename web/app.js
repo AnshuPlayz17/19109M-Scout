@@ -2572,16 +2572,17 @@ views.fieldmap = (id = "") => {
 // What each controller button does in driver control (the robot repo's src/main.cpp, opcontrol)
 const CONTROLS = [
   ["Driving", [["Left stick", "Forward / backward"], ["Right stick", "Turn (left / right)"]]],
-  ["Cascade", [["L1 (hold)", "Up, full power"], ["L2 (hold)", "Down, a little slower"], ["Up arrow", "Deploy at the start of a match: lifts for a moment so the stop flips into place, then lowers onto it"]]],
-  ["Claw", [["R2 (hold)", "Arm swings out (75% power, no limits)"], ["R1 (hold)", "Arm swings in"], ["Down arrow", "Claw open / close"]]],
+  ["Cascade", [["L1 (hold)", "Up, full power. No limits: let go at the top"], ["L2 (hold)", "Down, a little slower. No limits: let go at the hardstop"], ["Up arrow", "Deploy at the start of a match: lifts for a moment so the stop flips into place, then lowers onto it"]]],
+  ["Claw", [["R2 (hold)", "Arm swings out, full power, no limits. Let go: it holds its angle"], ["R1 (hold)", "Arm swings in"], ["Down arrow", "Claw open / close"]]],
   ["Macros (one button does several things)", [
     ["B", "Pick up after match loading: claw closes, cascade lifts for 0.6 s, arm swings all the way out. The cascade stays up"],
-    ["X (hold)", "Release: the cascade lowers while held. Let go: the claw opens and the cascade goes back up to where it was"],
+    ["X (hold)", "Release: the cascade lowers while held. Let go: the claw opens and the cascade goes back up. Then once you've driven 8\" away: cascade all the way down, arm swings in, claw open, ready for the match loader"],
+    ["Right arrow", "Field stack pick-up: raises the cascade to clear the stack if it's low, swings the arm out with the claw open if it's in, then waits. Drive onto the stack: it grabs when the sensors see it (or press B) and lifts a little. Right again cancels"],
     ["A", "Drop and reset: the claw opens as the cascade goes all the way down, then the arm swings all the way in"],
     ["Y", "Reset: cascade all the way down, then the arm swings in and the claw opens"],
     ["L1 / L2 / R1 / R2", "Stop any macro and take over"]]],
-  ["Testing only", [["Left arrow", "Drive test: 24\" forward on its own, result on the brain screen"], ["Right arrow", "Turn test: 90° right on its own, result on the brain screen"],
-    ["Brain screen center button", "Runs the selected auto after a 3 s countdown. Only when not plugged into a field or competition switch"],
+  ["Testing only", [["Left arrow (tap)", "Drive test: 24\" forward on its own, result on the brain screen"], ["Left arrow (hold 1 s)", "Turn test: 90° right on its own, result on the brain screen"],
+    ["L1 + L2 + R1 + R2 (hold 1 s)", "Runs the selected auto after a 3 s countdown (also the brain screen's center button). Only when not plugged into a field or competition switch"],
     ["Brain screen left / right", "Left switches red/blue, right steps to the next auto. Line 1 shows the pick"]]],
 ];
 // The controller picture with a labelled arrow to each button. Picture is 988 x 710 and
@@ -2595,9 +2596,9 @@ const CTRL_LABELS = [
   ["up", "Deploy", "cascade", 380, 115, 293, 281, 30],
   ["X", "Release (hold)", "macro", 610, 115, 693, 282, 30],
   ["", "Turn", "drive", 916, 115, 818, 205, 60],
-  ["left", "Drive test", "test", 120, 935, 233, 343, 30],
-  ["right", "Turn test", "test", 395, 935, 354, 343, 30],
-  ["Y", "Reset", "macro", 600, 935, 632, 343, 30],
+  ["left", "Tests", "test", 120, 935, 233, 343, 30],
+  ["right", "Field pick-up", "macro", 395, 935, 354, 343, 30],
+  ["Y", "Reset", "macro", 612, 935, 632, 343, 30],
   ["A", "Drop + reset", "macro", 872, 935, 753, 343, 30],
   ["down", "Claw open/close", "claw", 255, 1010, 293, 404, 30],
   ["B", "Pick up", "macro", 722, 1010, 693, 404, 30],
