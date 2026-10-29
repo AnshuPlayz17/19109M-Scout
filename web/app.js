@@ -2573,7 +2573,7 @@ views.fieldmap = (id = "") => {
 const CONTROLS = [
   ["Driving", [["Left stick", "Forward / backward"], ["Right stick", "Turn (left / right)"]]],
   ["Cascade", [["L2 (hold)", "Up, full power. No limits: let go at the top"], ["L1 (hold)", "Down, a little slower. No limits: let go at the hardstop"], ["Up arrow", "Deploy at the start of a match: lifts for a moment so the stop flips into place, then lowers onto it"]]],
-  ["Claw", [["R2 (hold)", "Arm swings out, full power, no limits. Let go: it holds its angle"], ["R1 (hold)", "Arm swings in"], ["Down arrow", "Claw open / close"]]],
+  ["Claw", [["R1 (hold)", "Arm swings out, full power, no limits. Let go: it holds its angle"], ["R2 (hold)", "Arm swings in"], ["Down arrow", "Claw open / close"]]],
   ["Macros (one button does several things)", [
     ["B", "Pick up after match loading: claw closes, arm goes to its start angle, cascade lifts; partway up the arm swings all the way out (full power). Then it waits there"],
     ["X (hold)", "Release: the cascade lowers while held. Let go: the claw opens and the cascade goes back up. Then once you've driven 6\" away: cascade all the way down, and the moment it's on the hardstop the arm swings in, claw open, ready for the match loader"],
@@ -2593,7 +2593,7 @@ const CTRL_COLORS = { drive: "#4c9aff", cascade: "#ffb020", claw: "#2ec4b6", mac
 const CTRL_LABELS = [
   // [button symbol, text, group, label center x, label row y, button x, button y, gap at the button]
   ["L2", "up · L1 down", "cascade", 230, 40, 225, 30, 6],
-  ["R2", "out · R1 in", "claw", 760, 40, 765, 30, 6],
+  ["R1", "out · R2 in", "claw", 760, 40, 765, 30, 6],
   ["", "Drive", "drive", 72, 115, 180, 205, 60],
   ["up", "Deploy", "cascade", 380, 115, 293, 281, 30],
   ["X", "Release (hold)", "macro", 610, 115, 693, 282, 30],
