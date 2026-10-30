@@ -21,10 +21,13 @@ export const COLORS = [["#f5f5f5", "White"], ["#1c1d21", "Black"], ["#e5484d", "
 export function createBoard({ h, icon, onIdle, field: fieldImage = "field.webp", key = "19109m.board", starts = [0.38, 0.62] }) {
   const saved = (() => { try { return JSON.parse(localStorage.getItem(key)) || {}; } catch { return {}; } })();
   let strokes = saved.strokes || [], redo = [];
-  let tokens = saved.tokens || null; // [{ id, x, y, color, label }]
+  // [{ id, x, y, color, label }]. LAYOUT bumps when the starting spots change, so robots saved in
+  // the old spots move to the new ones once (the drawing is kept).
+  const LAYOUT = 2;
+  let tokens = saved.layout === LAYOUT ? saved.tokens || null : null;
   let tool = saved.tool || "pen", color = saved.color || COLORS[0][0], size = saved.size ?? 1, showTokens = saved.showTokens ?? true;
   let current = null, drag = null, sawPen = false, busy = false;
-  const save = () => { try { localStorage.setItem(key, JSON.stringify({ strokes, tokens, tool, color, size, showTokens })); } catch {} };
+  const save = () => { try { localStorage.setItem(key, JSON.stringify({ strokes, tokens, layout: LAYOUT, tool, color, size, showTokens })); } catch {} };
 
   const img = h("img", { src: fieldImage, alt: "", draggable: "false" });
   const ink = h("canvas", { class: "ink" });
@@ -155,10 +158,13 @@ export function createBoard({ h, icon, onIdle, field: fieldImage = "field.webp",
   /** Names the four robots after the next match (us and partner, then the opponents). */
   function setTeams({ us, partner, opponents, color: ours }) {
     const them = ours === "red" ? "blue" : "red";
-    const want = [[`a1`, us, ours], [`a2`, partner || "Partner", ours], [`o1`, opponents?.[0] || "Opp 1", them], [`o2`, opponents?.[1] || "Opp 2", them]];
-    const [y1, y2] = starts; // where robots start along each alliance wall (clear of anything drawn there)
+    const [y1, y2] = starts; // where robots start along each wall (clear of anything drawn there)
+    // Each alliance wall has two spots; the partner starts in the first opponent's old spot and
+    // that opponent in the partner's, so each wall has one of ours and one of theirs.
     const home = { red: [[0.12, y2], [0.12, y1]], blue: [[0.88, y1], [0.88, y2]] };
-    if (!tokens) tokens = want.map(([id, label, c], i) => ({ id, label, color: c, x: home[c][i % 2][0], y: home[c][i % 2][1] }));
+    const want = [[`a1`, us, ours, home[ours][0]], [`a2`, partner || "Partner", ours, home[them][0]],
+      [`o1`, opponents?.[0] || "Opp 1", them, home[ours][1]], [`o2`, opponents?.[1] || "Opp 2", them, home[them][1]]];
+    if (!tokens) tokens = want.map(([id, label, c, [x, y]]) => ({ id, label, color: c, x, y }));
     else for (const [id, label, c] of want) { const t = tokens.find(x => x.id === id); if (t) { t.label = label; t.color = c; } }
     drawTokens();
   }
