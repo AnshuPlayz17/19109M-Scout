@@ -2597,7 +2597,7 @@ const CTRL_LABELS = [
   ["R1", "pick up · R2 field", "macro", 745, 40, 765, 30, 6],
   ["", "Drive", "drive", 72, 115, 180, 205, 60],
   ["up", "Deploy + zero", "cascade", 380, 115, 293, 281, 30],
-  ["X", "Release (hold)", "macro", 650, 115, 693, 281, 30],
+  ["X", "Release", "macro", 650, 115, 693, 281, 30],
   ["", "Turn", "drive", 916, 115, 818, 205, 60],
   ["left", "Arm in", "claw", 120, 935, 233, 343, 30],
   ["right", "Arm out", "claw", 380, 935, 354, 343, 30],
