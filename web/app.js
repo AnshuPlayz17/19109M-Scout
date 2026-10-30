@@ -2572,17 +2572,17 @@ views.fieldmap = (id = "") => {
 // What each controller button does in driver control (the robot repo's src/main.cpp, opcontrol)
 const CONTROLS = [
   ["Driving", [["Left stick", "Forward / backward"], ["Right stick", "Turn (left / right)"]]],
-  ["Cascade", [["L2 (hold)", "Up, full power. No limits: let go at the top"], ["L1 (hold)", "Down, a little slower. No limits: let go at the hardstop"],
-    ["B", "Cascade to the middle height"], ["Y", "Cascade to the top"],
+  ["Cascade", [["Y (hold)", "Up, full power. No limits: let go at the top"], ["B (hold)", "Down, a little slower. No limits: let go at the hardstop"],
     ["Up arrow", "Deploy at the start of a match: lifts for a moment so the stop flips into place, then lowers onto it. Then the claw arm hangs loose and sets its 0 (about 1.5 s). The auto already does this at its start, so after an auto there's no need"]]],
   ["Claw", [["Right arrow (hold)", "Arm out, full power, no limits. Let go: it holds its angle"], ["Left arrow (hold)", "Arm in"], ["Down arrow", "Claw open / close"]]],
   ["Macros (one button does several things)", [
-    ["R1", "Pick up after match loading: claw closes, arm goes to its start angle, cascade lifts; partway up the arm goes all the way out (full speed). Then it waits there"],
+    ["L1", "Pick up after match loading: the plate closes, the arm goes to 0, the cascade lifts to the middle; partway up the arm goes all the way out (full speed). Press L1 again: cascade to the top. (Hold L2 first for the L1 + L2 combos, so this doesn't start)"],
+    ["R1", "Match loading position: cascade all the way down, then the arm to the loading angle and the plate opens"],
     ["R2 (hold)", "Release: the cascade lowers while held. Let go: the claw opens and the cascade goes back up. Then once you've driven 6\" away: cascade all the way down, and the moment it's on the hardstop the arm goes to the loading angle, claw open, ready for the match loader"],
     ["A", "Drop and reset: the claw opens as the cascade goes all the way down, then the arm swings all the way in"],
     ["X", "Field stack pick-up: cascade up, arm out over the stack, claw open. Drive onto the stack and press X again to grab: it lowers, closes and lifts back up"],
-    ["L1 / L2 / Left / Right", "Stop any macro and take over"]]],
-  ["Testing (hold L1 + L2)", [["L1 + L2, tap Down arrow", "Zero the claw arm: with the cascade on the hardstop, the arm hangs loose, and 1.5 s after it stops that spot is 0. Brain line 3 shows \"zeroing\" meanwhile"],
+    ["Y / B / Left / Right", "Stop any macro and take over"]]],
+  ["Testing (hold L2, then L1)", [["L1 + L2, tap Down arrow", "Zero the claw arm: with the cascade on the hardstop, the arm hangs loose, and 1.5 s after it stops that spot is 0. Brain line 3 shows \"zeroing\" meanwhile"],
     ["L1 + L2, tap Right arrow", "Drive test: 24\" forward on its own, result on the brain screen"], ["L1 + L2, tap Left arrow", "Turn test: 90° right on its own, result on the brain screen"],
     ["L1 + L2 (hold 1 s)", "Runs the picked auto after a 3 s countdown. Only when not plugged into a field or competition switch"]]],
   ["Picking the auto (no upload)", [["Brain screen left / right", "Previous / next auto (only the event autos)"], ["Brain screen center", "Switch red / blue"],
@@ -2594,18 +2594,18 @@ const CONTROLS = [
 const CTRL_COLORS = { drive: "#4c9aff", cascade: "#ffb020", claw: "#2ec4b6", macro: "#ff5d73", test: "#9aa0aa" };
 const CTRL_LABELS = [
   // [button symbol, text, group, label center x, label row y, button x, button y, gap at the button]
-  ["L2", "up · L1 down", "cascade", 230, 40, 225, 30, 6],
-  ["R1", "pick up · R2 release", "macro", 745, 40, 765, 30, 6],
+  ["L1", "pick up · L2 combos", "macro", 230, 40, 225, 30, 6],
+  ["R1", "loading · R2 release", "macro", 745, 40, 765, 30, 6],
   ["", "Drive", "drive", 72, 115, 180, 205, 60],
   ["up", "Deploy", "cascade", 380, 115, 293, 281, 30],
   ["X", "Field pick-up", "macro", 650, 115, 693, 281, 30],
   ["", "Turn", "drive", 916, 115, 818, 205, 60],
   ["left", "Arm in", "claw", 120, 935, 233, 343, 30],
   ["right", "Arm out", "claw", 380, 935, 354, 343, 30],
-  ["Y", "Cascade top", "cascade", 592, 935, 632, 343, 30],
+  ["Y", "Cascade up", "cascade", 592, 935, 632, 343, 30],
   ["A", "Drop + reset", "macro", 860, 935, 753, 343, 30],
   ["down", "Claw open/close", "claw", 255, 1010, 293, 404, 30],
-  ["B", "Cascade middle", "cascade", 722, 1010, 693, 404, 30],
+  ["B", "Cascade down", "cascade", 722, 1010, 693, 404, 30],
 ];
 function controllerDiagram() {
   const svg = svgEl("svg", { viewBox: "-10 0 1008 1045", class: "ctrlpic", role: "img", "aria-label": "Controller with what each button does" });
