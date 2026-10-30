@@ -1281,6 +1281,8 @@ views.board = () => {
   if (!areasOpen()) return [h("div", { class: "wb-head" }, h("button", { type: "button", class: "back", onclick: exitTo }, icon("back"), h("span", {}, "Done")), h("div", { class: "wb-title" }, h("b", {}, "Whiteboard")), h("span", {})),
     h("div", { class: "gate-wrap" }, areaGate("The whiteboard", "Our plays are for the team only."))];
   board ||= createBoard({ h, icon, field: G.field, key: G.key === "override" ? "19109m.board" : `19109m.board.${G.key}`, starts: G.key === "pushback" ? [0.3, 0.7] : undefined,
+    // Override: red starts on the left wall and the bottom middle, blue on the right wall and the top middle.
+    spots: G.key === "override" ? { red: [[0.12, 0.62], [0.48, 0.87]], blue: [[0.89, 0.5], [0.49, 0.125]] } : null,
     onIdle: () => { if (redrawAfterStroke) { redrawAfterStroke = false; refresh(); } } });
   // Robots are named after our next match: us and our partner, then the opponents.
   const fe = focusEvent(), ev = fe && S.events[fe.id];

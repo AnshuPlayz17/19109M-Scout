@@ -18,12 +18,12 @@ export const COLORS = [["#f5f5f5", "White"], ["#1c1d21", "Black"], ["#e5484d", "
  * `h` and `icon` are the app's element helpers. `onIdle` runs after each stroke or drag ends.
  * `field` is the field picture and `key` where the drawing is saved (one board per game).
  */
-export function createBoard({ h, icon, onIdle, field: fieldImage = "field.webp", key = "19109m.board", starts = [0.38, 0.62] }) {
+export function createBoard({ h, icon, onIdle, field: fieldImage = "field.webp", key = "19109m.board", starts = [0.38, 0.62], spots = null }) {
   const saved = (() => { try { return JSON.parse(localStorage.getItem(key)) || {}; } catch { return {}; } })();
   let strokes = saved.strokes || [], redo = [];
   // [{ id, x, y, color, label }]. LAYOUT bumps when the starting spots change, so robots saved in
   // the old spots move to the new ones once (the drawing is kept).
-  const LAYOUT = 2;
+  const LAYOUT = 3;
   let tokens = saved.layout === LAYOUT ? saved.tokens || null : null;
   let tool = saved.tool || "pen", color = saved.color || COLORS[0][0], size = saved.size ?? 1, showTokens = saved.showTokens ?? true;
   let current = null, drag = null, sawPen = false, busy = false;
@@ -158,12 +158,13 @@ export function createBoard({ h, icon, onIdle, field: fieldImage = "field.webp",
   /** Names the four robots after the next match (us and partner, then the opponents). */
   function setTeams({ us, partner, opponents, color: ours }) {
     const them = ours === "red" ? "blue" : "red";
-    const [y1, y2] = starts; // where robots start along each wall (clear of anything drawn there)
-    // Each alliance wall has two spots; the partner starts in the first opponent's old spot and
-    // that opponent in the partner's, so each wall has one of ours and one of theirs.
-    const home = { red: [[0.12, y2], [0.12, y1]], blue: [[0.88, y1], [0.88, y2]] };
-    const want = [[`a1`, us, ours, home[ours][0]], [`a2`, partner || "Partner", ours, home[them][0]],
-      [`o1`, opponents?.[0] || "Opp 1", them, home[ours][1]], [`o2`, opponents?.[1] || "Opp 2", them, home[them][1]]];
+    // Where each alliance's two robots start, as field fractions: `spots` from the game (first
+    // spot is ours or their second robot's, see below), else two spots along each alliance wall.
+    const [y1, y2] = starts;
+    const home = spots || { red: [[0.12, y2], [0.12, y1]], blue: [[0.88, y1], [0.88, y2]] };
+    const want = [[`a1`, us, ours, home[ours][0]], [`a2`, partner || "Partner", ours, home[ours][1]],
+      // With game spots each alliance mirrors the other (their first opponent across from our partner).
+      [`o1`, opponents?.[0] || "Opp 1", them, home[them][spots ? 1 : 0]], [`o2`, opponents?.[1] || "Opp 2", them, home[them][spots ? 0 : 1]]];
     if (!tokens) tokens = want.map(([id, label, c, [x, y]]) => ({ id, label, color: c, x, y }));
     else for (const [id, label, c] of want) { const t = tokens.find(x => x.id === id); if (t) { t.label = label; t.color = c; } }
     drawTokens();
