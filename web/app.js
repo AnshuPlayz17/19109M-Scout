@@ -2577,13 +2577,13 @@ const CONTROLS = [
   ["Claw", [["Right arrow (hold)", "Arm out, full power, no limits. Let go: it holds its angle"], ["Left arrow (hold)", "Arm in"], ["Down arrow", "Plate open / close"]]],
   ["Macros (one button does several things)", [
     ["R1", "Pick up after match loading: the plate closes, the arm goes to 0, the cascade lifts to the middle; partway up the arm goes all the way out (full speed). Press R1 again: cascade to the top"],
-    ["R2", "Field stack pick-up: cascade up, arm out over the stack, plate open. Drive onto the stack: when the sensor sees it the robot grabs on its own (lowers, closes, lifts back up). Press R2 again to grab right away"],
-    ["X (hold)", "Release: the cascade lowers while held. Let go: the plate opens and the cascade goes back up, and stays there"],
-    ["L1", "Match loading position: cascade all the way down, then the arm to the loading angle and the plate opens. The only button that goes to the match loader. (Hold L2 first for the combos, so this doesn't start)"],
+    ["R2 (hold)", "Release: the cascade lowers while held. Let go: the plate opens and the cascade goes back up. Then once you've driven 6\" away: the match loading position (same as L1)"],
+    ["L2", "Field stack pick-up: cascade up, arm out over the stack, plate open. Drive onto the stack: when the sensor sees it the robot grabs on its own (lowers, closes, lifts back up). Press L2 again to grab right away"],
+    ["L1", "Match loading position: cascade all the way down, then the arm to the loading angle and the plate opens"],
     ["Y / B / Left / Right", "Stop any macro and take over"]]],
-  ["Testing (hold L2, then L1)", [
-    ["L2 + L1, tap Right arrow", "Drive test: 24\" forward on its own, result on the brain screen"], ["L2 + L1, tap Left arrow", "Turn test: 90° right on its own, result on the brain screen"],
-    ["L2 + L1 (hold 1 s)", "Runs the picked auto after a 3 s countdown. Only when not plugged into a field or competition switch"]]],
+  ["Testing (hold B + Y together)", [
+    ["B + Y, tap Right arrow", "Drive test: 24\" forward on its own, result on the brain screen"], ["B + Y, tap Left arrow", "Turn test: 90° right on its own, result on the brain screen"],
+    ["B + Y (hold 1 s)", "Runs the picked auto after a 3 s countdown. Only when not plugged into a field or competition switch"]]],
   ["Picking the auto (no upload)", [["Brain screen left / right", "Previous / next auto (only the event autos)"], ["Brain screen center", "Switch red / blue"],
     ["Left / Right arrows (on the field)", "Before a match, while the robot is disabled: previous / next auto"], ["A (on the field)", "Before a match: switch red / blue"],
     ["Controller screen", "Shows the pick, e.g. \"AUTO 3/8 RED\" and \"Wall: G2 + rush\""]]],
@@ -2593,11 +2593,10 @@ const CONTROLS = [
 const CTRL_COLORS = { drive: "#4c9aff", cascade: "#ffb020", claw: "#2ec4b6", macro: "#ff5d73", test: "#9aa0aa" };
 const CTRL_LABELS = [
   // [button symbol, text, group, label center x, label row y, button x, button y, gap at the button]
-  ["L1", "loading · L2 combos", "macro", 230, 40, 225, 30, 6],
-  ["R1", "pick up · R2 field", "macro", 745, 40, 765, 30, 6],
+  ["L1", "loading · L2 field", "macro", 230, 40, 225, 30, 6],
+  ["R1", "pick up · R2 release", "macro", 745, 40, 765, 30, 6],
   ["", "Drive", "drive", 72, 115, 180, 205, 60],
   ["up", "Deploy + zero", "cascade", 380, 115, 293, 281, 30],
-  ["X", "Release", "macro", 650, 115, 693, 281, 30],
   ["", "Turn", "drive", 916, 115, 818, 205, 60],
   ["left", "Arm in", "claw", 120, 935, 233, 343, 30],
   ["right", "Arm out", "claw", 380, 935, 354, 343, 30],
