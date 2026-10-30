@@ -2641,7 +2641,7 @@ const PORTS = [
   [15, "Cascade", "cascade", "Cascade motor, 11 W blue (its position is brain screen line 0)"],
   [11, "Cascade", "cascade", "Cascade motor, 11 W blue, reversed in code"],
   [13, "Cascade", "cascade", "Cascade motor, 11 W blue"],
-  [1, "Claw arm", "claw", "Claw arm motor, 11 W"],
+  [1, "Claw arm", "claw", "Claw arm motor, 11 W, blue (600 rpm)"],
   [3, "IMU", "sensor", "Inertial sensor (heading)"],
   [2, "Odom", "sensor", "Tracking wheel rotation sensor, reversed in code"],
   [14, "Spool", "sensor", "Cascade spool rotation sensor"],
