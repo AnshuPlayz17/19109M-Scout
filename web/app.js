@@ -2574,7 +2574,7 @@ const CONTROLS = [
   ["Driving", [["Left stick", "Forward / backward"], ["Right stick", "Turn (left / right)"]]],
   ["Cascade", [["L2 (hold)", "Up, full power. No limits: let go at the top"], ["L1 (hold)", "Down, a little slower. No limits: let go at the hardstop"],
     ["B", "Cascade to the middle height"], ["Y", "Cascade to the top"],
-    ["Up arrow", "Deploy at the start of a match: lifts for a moment so the stop flips into place, then lowers onto it. Then the claw arm hangs loose and sets its 0 (about 1.5 s)"]]],
+    ["Up arrow", "Deploy at the start of a match: lifts for a moment so the stop flips into place, then lowers onto it. Then the claw arm hangs loose and sets its 0 (about 1.5 s). The auto already does this at its start, so after an auto there's no need"]]],
   ["Claw", [["Right arrow (hold)", "Arm out, full power, no limits. Let go: it holds its angle"], ["Left arrow (hold)", "Arm in"], ["Down arrow", "Claw open / close"]]],
   ["Macros (one button does several things)", [
     ["R1", "Pick up after match loading: claw closes, arm goes to its start angle, cascade lifts; partway up the arm goes all the way out (full speed). Then it waits there"],
