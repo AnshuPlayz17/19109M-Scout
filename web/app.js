@@ -2573,38 +2573,36 @@ views.fieldmap = (id = "") => {
 const CONTROLS = [
   ["Driving", [["Left stick", "Forward / backward"], ["Right stick", "Turn (left / right)"]]],
   ["Cascade", [["Y (hold)", "Up, full power. No limits: let go at the top"], ["B (hold)", "Down, a little slower. No limits: let go at the hardstop"],
-    ["Up arrow", "Deploy at the start of a match: lifts for a moment so the stop flips into place, then lowers onto it. Then the claw arm hangs loose and sets its 0 (about 1.5 s). The auto already does this at its start, so after an auto there's no need"]]],
-  ["Claw", [["Right arrow (hold)", "Arm out, full power, no limits. Let go: it holds its angle"], ["Left arrow (hold)", "Arm in"], ["Down arrow", "Claw open / close"]]],
+    ["Up arrow", "Deploy and zero the arm: lifts for a moment so the stop flips into place, then holds a little above the hardstop while the claw arm hangs loose and sets its 0 (about 1.5 s). The auto already does this at its start"]]],
+  ["Claw", [["Right arrow (hold)", "Arm out, full power, no limits. Let go: it holds its angle"], ["Left arrow (hold)", "Arm in"], ["Down arrow", "Plate open / close"]]],
   ["Macros (one button does several things)", [
-    ["L1", "Pick up after match loading: the plate closes, the arm goes to 0, the cascade lifts to the middle; partway up the arm goes all the way out (full speed). Press L1 again: cascade to the top. (Hold L2 first for the L1 + L2 combos, so this doesn't start)"],
-    ["R1", "Match loading position: cascade all the way down, then the arm to the loading angle and the plate opens"],
-    ["R2 (hold)", "Release: the cascade lowers while held. Let go: the claw opens and the cascade goes back up. Then once you've driven 6\" away: cascade all the way down, and the moment it's on the hardstop the arm goes to the loading angle, claw open, ready for the match loader"],
-    ["A", "Drop and reset: the claw opens as the cascade goes all the way down, then the arm swings all the way in"],
-    ["X", "Field stack pick-up: cascade up, arm out over the stack, claw open. Drive onto the stack and press X again to grab: it lowers, closes and lifts back up"],
+    ["R1", "Pick up after match loading: the plate closes, the arm goes to 0, the cascade lifts to the middle; partway up the arm goes all the way out (full speed). Press R1 again: cascade to the top"],
+    ["R2 (hold)", "Release: the cascade lowers while held. Let go: the plate opens and the cascade goes back up, and stays there"],
+    ["L1", "Match loading position: cascade all the way down, then the arm to the loading angle and the plate opens. The only button that goes to the match loader. (Hold L2 first for the combos, so this doesn't start)"],
+    ["X", "Field stack pick-up: cascade up, arm out over the stack, plate open. Drive onto the stack; the sensor grabs, or press X again: it lowers, closes and lifts back up"],
     ["Y / B / Left / Right", "Stop any macro and take over"]]],
-  ["Testing (hold L2, then L1)", [["L1 + L2, tap Down arrow", "Zero the claw arm: with the cascade on the hardstop, the arm hangs loose, and 1.5 s after it stops that spot is 0. Brain line 3 shows \"zeroing\" meanwhile"],
-    ["L1 + L2, tap Right arrow", "Drive test: 24\" forward on its own, result on the brain screen"], ["L1 + L2, tap Left arrow", "Turn test: 90° right on its own, result on the brain screen"],
-    ["L1 + L2 (hold 1 s)", "Runs the picked auto after a 3 s countdown. Only when not plugged into a field or competition switch"]]],
+  ["Testing (hold L2, then L1)", [
+    ["L2 + L1, tap Right arrow", "Drive test: 24\" forward on its own, result on the brain screen"], ["L2 + L1, tap Left arrow", "Turn test: 90° right on its own, result on the brain screen"],
+    ["L2 + L1 (hold 1 s)", "Runs the picked auto after a 3 s countdown. Only when not plugged into a field or competition switch"]]],
   ["Picking the auto (no upload)", [["Brain screen left / right", "Previous / next auto (only the event autos)"], ["Brain screen center", "Switch red / blue"],
     ["Left / Right arrows (on the field)", "Before a match, while the robot is disabled: previous / next auto"], ["A (on the field)", "Before a match: switch red / blue"],
-    ["Controller screen", "Shows the pick, e.g. \"AUTO 2/8 RED\" and \"Bottom: preload G3\""]]],
+    ["Controller screen", "Shows the pick, e.g. \"AUTO 3/8 RED\" and \"Wall: G2 + rush\""]]],
 ];
 // The controller picture with a labelled arrow to each button. Picture is 988 x 710 and
 // sits at y = 170 in the drawing; labels go in rows above and below it.
 const CTRL_COLORS = { drive: "#4c9aff", cascade: "#ffb020", claw: "#2ec4b6", macro: "#ff5d73", test: "#9aa0aa" };
 const CTRL_LABELS = [
   // [button symbol, text, group, label center x, label row y, button x, button y, gap at the button]
-  ["L1", "pick up · L2 combos", "macro", 230, 40, 225, 30, 6],
-  ["R1", "loading · R2 release", "macro", 745, 40, 765, 30, 6],
+  ["L1", "loading · L2 combos", "macro", 230, 40, 225, 30, 6],
+  ["R1", "pick up · R2 release", "macro", 745, 40, 765, 30, 6],
   ["", "Drive", "drive", 72, 115, 180, 205, 60],
-  ["up", "Deploy", "cascade", 380, 115, 293, 281, 30],
+  ["up", "Deploy + zero", "cascade", 380, 115, 293, 281, 30],
   ["X", "Field pick-up", "macro", 650, 115, 693, 281, 30],
   ["", "Turn", "drive", 916, 115, 818, 205, 60],
   ["left", "Arm in", "claw", 120, 935, 233, 343, 30],
   ["right", "Arm out", "claw", 380, 935, 354, 343, 30],
   ["Y", "Cascade up", "cascade", 592, 935, 632, 343, 30],
-  ["A", "Drop + reset", "macro", 860, 935, 753, 343, 30],
-  ["down", "Claw open/close", "claw", 255, 1010, 293, 404, 30],
+  ["down", "Plate open/close", "claw", 255, 1010, 293, 404, 30],
   ["B", "Cascade down", "cascade", 722, 1010, 693, 404, 30],
 ];
 function controllerDiagram() {
