@@ -2585,9 +2585,9 @@ const CONTROLS = [
     ["Arm swings", "The macros swing the arm out or in by time, not into the stop: full power until it has turned 30°, then 1 s more, then it holds. Less load on the arm"],
     ["Up / Down / Left / Right", "Stop any macro and take over"]]],
   ["Testing (hold A + B together)", [
-    ["A + B, tap Right arrow", "Drive test: 24\" forward on its own, result on the brain screen"], ["A + B, tap Left arrow", "Turn test: 90° right on its own, result on the brain screen"],
+    ["A + B, tap Right arrow", "Drive test: 24\" forward on its own, result on the brain screen (off the field only)"], ["A + B, tap Left arrow", "Turn test: 90° right on its own, result on the brain screen (off the field only)"],
     ["A + B (hold 1 s)", "Runs the picked auto after a 3 s countdown. Only when not plugged into a field or competition switch"]]],
-  ["Picking the auto (no upload)", [["Brain screen left / right", "Previous / next auto (only the event autos)"], ["Brain screen center", "Switch red / blue"],
+  ["Picking the auto (no upload)", [["Brain screen left / right", "Previous / next auto: 3, 4, 5, 6 (starts on 3)"], ["Brain screen center", "Switch red / blue"],
     ["Left / Right arrows (on the field)", "Before a match, while the robot is disabled: previous / next auto"], ["A (on the field)", "Before a match: switch red / blue"],
     ["Controller screen", "Shows the pick, e.g. \"AUTO 3/8 RED\" and \"Wall: G2 + rush\""]]],
 ];
