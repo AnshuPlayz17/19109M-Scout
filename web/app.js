@@ -2578,7 +2578,7 @@ const CONTROLS = [
     ["Y", "Deploy and zero the arm: lifts for a moment so the stop flips into place, then holds a little above the hardstop while the claw arm hangs loose and sets its 0 (about 1.5 s). The auto already does this at its start"]]],
   ["Claw", [["Right arrow (hold)", "Arm out, full power, no limits. Let go: it holds its angle"], ["Left arrow (hold)", "Arm in"], ["X", "Plate open / close"]]],
   ["Macros (one button does several things)", [
-    ["R1", "Pick up after match loading: press it, then back up (or turn) about 5.5\" away from the loader (driving forwards doesn't count). Then the plate closes, the cascade lifts to the middle and partway up the arm swings all the way out. Press R1 again while it waits: it goes right away. Press R1 again once it's lifting: cascade to the top"],
+    ["R1", "Pick up after match loading: press it and back off the loader; 0.4 s later the plate closes, the cascade lifts to the middle and partway up the arm swings all the way out. Press R1 again while it waits: it goes right away. Press R1 again once it's lifting: cascade to the top"],
     ["R2 (hold)", "Release: the cascade lowers while held. Let go: the plate opens and the cascade goes back up. Then once you've driven 6\" away: the match loading position (same as L1)"],
     ["L1", "Match loading position: cascade all the way down; once it's on the hardstop the arm swings all the way in and the plate opens"],
     ["L2", "Field stack pick-up: cascade up, arm out over the stack, plate open. Drive onto the stack: when the sensor sees it the robot grabs on its own (lowers, closes, lifts back up). Press L2 again to grab right away"],
