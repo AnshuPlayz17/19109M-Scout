@@ -2576,7 +2576,7 @@ const CONTROLS = [
   ["Driving", [["Left stick", "Forward / backward"], ["Right stick", "Turn (left / right)"]]],
   ["Cascade", [["Up arrow (hold)", "Up, full power. No limits: let go at the top"], ["Down arrow (hold)", "Down, a little slower. No limits: let go at the hardstop"],
     ["Y", "Deploy and zero the arm: lifts for a moment so the stop flips into place, then holds a little above the hardstop while the claw arm hangs loose and sets its 0 (about 1.5 s). The auto already does this at its start"]]],
-  ["Side toggle", [["A", "Flips the side toggle with piston H until the color sensor sees our color (red/blue as picked). A again stops it. Hold B first for the A + B combos"]]],
+  ["Side toggle", [["A", "Flips the side toggle with piston H until the color sensor sees our color (red/blue as picked), and stops as soon as it does. A again stops it"], ["B", "Moves the side toggle piston by hand: out on one press, back on the next"]]],
   ["Claw", [["Right arrow (hold)", "Arm out, full power, no limits. Let go: it holds its angle"], ["Left arrow (hold)", "Arm in"], ["X", "Plate open / close"]]],
   ["Macros (one button does several things)", [
     ["R1", "Pick up after match loading: press it and back off the loader; 0.4 s later the plate closes, the cascade lifts to the middle and partway up the arm swings all the way out. Press R1 again while it waits: it goes right away. Press R1 again once it's lifting: cascade to the top"],
@@ -2606,9 +2606,9 @@ const CTRL_LABELS = [
   ["left", "Arm in", "claw", 120, 935, 233, 343, 30],
   ["right", "Arm out", "claw", 380, 935, 354, 343, 30],
   ["Y", "Deploy/zero", "cascade", 592, 935, 632, 343, 30],
-  ["A", "A + B: tests", "test", 860, 935, 753, 343, 30],
+  ["A", "Side toggle", "claw", 860, 935, 753, 343, 30],
   ["down", "Cascade down", "cascade", 255, 1010, 293, 404, 30],
-  ["B", "A + B: tests", "test", 722, 1010, 693, 404, 30],
+  ["B", "Toggle piston", "claw", 722, 1010, 693, 404, 30],
 ];
 function controllerDiagram() {
   const svg = svgEl("svg", { viewBox: "-10 0 1008 1045", class: "ctrlpic", role: "img", "aria-label": "Controller with what each button does" });
