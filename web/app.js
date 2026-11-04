@@ -2576,7 +2576,7 @@ const CONTROLS = [
   ["Driving", [["Left stick", "Forward / backward"], ["Right stick", "Turn (left / right)"]]],
   ["Cascade", [["Up arrow (hold)", "Up, full power. No limits: let go at the top"], ["Down arrow (hold)", "Down, a little slower. No limits: let go at the hardstop"],
     ["Y", "Deploy and zero the arm: lifts for a moment so the stop flips into place, then holds a little above the hardstop while the claw arm hangs loose and sets its 0 (about 1.5 s). The auto already does this at its start"]]],
-  ["Side toggle", [["A", "Flips the side toggle with piston H until the color sensor sees our color (red/blue as picked), and stops as soon as it does. A again stops it"], ["B", "Moves the side toggle piston by hand: out on one press, back on the next"], ["(A, B)", "Both act when you let go, so holding A + B for the combos never moves the toggle"]]],
+  ["Side toggle", [["A", "Flips the side toggle with piston H until the color sensor sees our color (red/blue as picked), and stops as soon as it does. A again stops it"], ["B", "Moves the side toggle piston by hand: out on one press, back on the next"], ["(A, B, X, Y)", "Act when you let go, and only when pressed on their own, so holding A + B or X + Y never moves anything"]]],
   ["Claw", [["Right arrow (hold)", "Arm out, full power, no limits. Let go: it holds its angle"], ["Left arrow (hold)", "Arm in"], ["X", "Plate open / close"]]],
   ["Macros (one button does several things)", [
     ["R1", "Pick up after match loading: press it and back off the loader; 0.4 s later the plate closes, the cascade lifts to the middle and partway up the arm swings all the way out. Press R1 again while it waits: it goes right away. Press R1 again once it's lifting: cascade to the top"],
@@ -2588,9 +2588,9 @@ const CONTROLS = [
   ["Testing (hold A + B together)", [
     ["A + B, tap Right arrow", "Drive test: 24\" forward on its own, result on the brain screen (off the field only)"], ["A + B, tap Left arrow", "Turn test: 90° right on its own, result on the brain screen (off the field only)"],
     ["A + B (hold 1 s)", "Runs the picked auto after a 3 s countdown. Only when not plugged into a field or competition switch"]]],
-  ["Picking the auto (no upload)", [["Hold A + B, tap Up / Down", "Next / previous auto (3 to 12, starts on 3). Works testing off the field and on the field before a match"],
-    ["Hold A + B, tap X", "Switch red / blue. Picking doesn't start the auto: let go of A + B first"],
-    ["Left / Right arrows, A (on the field)", "Before a match, while the robot is disabled: previous / next auto, red / blue (Up / Down / X work there too)"],
+  ["Picking the auto (no upload)", [["Hold X + Y, tap Right / Left", "Next / previous auto (3 to 12, starts on 3), when testing off the field"],
+    ["Hold X + Y, tap A", "Switch red / blue"],
+    ["Left / Right arrows, A (on the field)", "Before a match, while the robot is disabled: previous / next auto, red / blue (with or without X + Y)"],
     ["Brain screen left / center / right", "Previous auto / red-blue / next auto"],
     ["Controller screen", "Shows the pick, e.g. \"AUTO 3  RED\" and the auto's name"]]],
 ];
