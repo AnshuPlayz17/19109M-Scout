@@ -2576,6 +2576,7 @@ const CONTROLS = [
   ["Driving", [["Left stick", "Forward / backward"], ["Right stick", "Turn (left / right)"]]],
   ["Cascade", [["Up arrow (hold)", "Up, full power. No limits: let go at the top"], ["Down arrow (hold)", "Down, a little slower. No limits: let go at the hardstop"],
     ["Y", "Deploy and zero the arm: lifts for a moment so the stop flips into place, then holds a little above the hardstop while the claw arm hangs loose and sets its 0 (about 1.5 s). The auto already does this at its start"]]],
+  ["Side toggle", [["A", "Flips the side toggle with piston H until the color sensor sees our color (red/blue as picked). A again stops it. Hold B first for the A + B combos"]]],
   ["Claw", [["Right arrow (hold)", "Arm out, full power, no limits. Let go: it holds its angle"], ["Left arrow (hold)", "Arm in"], ["X", "Plate open / close"]]],
   ["Macros (one button does several things)", [
     ["R1", "Pick up after match loading: press it and back off the loader; 0.4 s later the plate closes, the cascade lifts to the middle and partway up the arm swings all the way out. Press R1 again while it waits: it goes right away. Press R1 again once it's lifting: cascade to the top"],
@@ -2651,6 +2652,8 @@ const PORTS = [
   [2, "Odom", "sensor", "Tracking wheel rotation sensor, reversed in code"],
   [14, "Spool", "sensor", "Cascade spool rotation sensor"],
   [4, "Stack", "sensor", "Distance sensor for the field stack pick-up, aimed into the claw at cup height (brain screen line 3)"],
+  [17, "Toggle", "sensor", "Color sensor (optical) on the side toggle: sees which color it shows (brain screen line 6)"],
+  ["H", "Toggle", "air", "Side toggle piston (A flips it until it shows our color)"],
   ["A", "Claw", "air", "Claw piston (extend = open)"],
 ];
 function brainDiagram() {
