@@ -911,3 +911,5 @@ nav.bottom a { min-width: 0; overflow: hidden; white-space: nowrap; }
 .toref { display: flex; flex-direction: column; gap: 6px; padding-top: 10px; border-top: 1px solid var(--sep); }
 .toref p { font-size: 1rem; line-height: 1.5; }
 .ruletext { white-space: pre-wrap; line-height: 1.55; font-size: 0.9875rem; }
+label.btn.upload { position: relative; overflow: hidden; display: inline-flex; align-items: center; justify-content: center; }
+label.btn.upload input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }

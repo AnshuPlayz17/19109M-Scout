@@ -7,6 +7,8 @@
 //   manual/<game>-text-<i>      every page's text, for the AI to read
 // Nothing from the manual is kept in this repository; it comes from VEX each time.
 import { getDocumentProxy } from "unpdf";
+import { parseRules, manualVersion, pageText } from "../web/manual-parse.js";
+export { parseRules, manualVersion };
 
 export const MANUAL_PAGES = {
   override: "https://www.vexrobotics.com/override-manual",
@@ -54,49 +56,8 @@ export function pickManualPdf(html) {
 export async function readPdf(buffer) {
   const pdf = await getDocumentProxy(new Uint8Array(buffer));
   const pages = [];
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
-    const content = await page.getTextContent();
-    let text = "";
-    for (const item of content.items) { text += item.str; text += item.hasEOL ? "\n" : ""; }
-    pages.push(text.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim());
-  }
+  for (let i = 1; i <= pdf.numPages; i++) pages.push(pageText(await (await pdf.getPage(i)).getTextContent()));
   return pages;
-}
-
-const RULE_START = /^\s*<([A-Z]{1,3}\d{1,2}[a-z]?)>\s*(.*)$/;
-/**
- * The rules, in order: { id, title, text, page }. A rule starts on a line that begins with its
- * tag (<SG1> Starting a Match ...) and runs until the next one; tags quoted inside a rule
- * ("see <G1>") are not rule starts because they don't begin a line.
- */
-export function parseRules(pages) {
-  const rules = [];
-  let cur = null;
-  pages.forEach((text, p) => {
-    for (const line of text.split("\n")) {
-      const m = line.match(RULE_START);
-      if (m && !rules.some(r => r.id === m[1])) {
-        cur = { id: m[1], title: "", text: line.trim(), page: p + 1 };
-        rules.push(cur);
-        continue;
-      }
-      if (cur && line.trim() && cur.text.length < 6000) cur.text += `\n${line.trim()}`;
-    }
-  });
-  for (const r of rules) {
-    const body = r.text.replace(/^<[^>]+>\s*/, "").replace(/\s+/g, " ").trim();
-    // The title is the rule's opening phrase, before the first sentence ends or a dash.
-    r.title = (body.split(/(?<=[.!?])\s|\s[–—-]\s/)[0] || body).slice(0, 110);
-    r.text = r.text.slice(0, 6000);
-  }
-  return rules;
-}
-
-/** The version printed in the PDF's address or on its first page, if any. */
-export function manualVersion(url, pages) {
-  const m = (url || "").match(/v[-_ ]?(\d+(?:\.\d+)+)/i) || (pages[0] || "").match(/Version\s+(\d+(?:\.\d+)+)/i);
-  return m ? m[1] : "";
 }
 
 /** Fetches, parses and stores the manual when VEX has a new one (or ours is over a week old). */

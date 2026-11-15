@@ -125,8 +125,9 @@ service cloud.firestore {
     // Scout for me reports and match game plans (written by the sync), shared with the whole team.
     match /reports/{d} { allow read: if isMember(); }
     match /plans/{d} { allow read: if isMember(); }
-    // The game manual (written by the sync from VEX's PDF).
-    match /manual/{d} { allow read: if isMember(); }
+    // The game manual: rules and page text from VEX's PDF.
+    // An admin can load it from a PDF in the app (VEX's site turns automated downloads away).
+    match /manual/{d} { allow read: if isMember(); allow write: if isAdmin(); }
 
     // Pit display settings, shared so a phone can update the pit laptop: where we are now,
     // the pit number, a message, and which sections are hidden ("override" / "pushback").

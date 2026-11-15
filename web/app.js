@@ -3,7 +3,7 @@ import { db, h, requireMember, signOut, auth, splash, hideSplash, rememberMember
 import { createBoard } from "./board.js";
 import { AXES, profile } from "./profile.js";
 import {
-  doc, getDoc, getDocs, onSnapshot, collection, query, where, addDoc, setDoc, updateDoc, deleteDoc, serverTimestamp, orderBy, limit, arrayUnion, arrayRemove,
+  doc, getDoc, getDocs, onSnapshot, collection, query, where, addDoc, setDoc, updateDoc, deleteDoc, serverTimestamp, orderBy, limit, arrayUnion, arrayRemove, writeBatch,
 } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 import { EmailAuthProvider, reauthenticateWithCredential } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
 
@@ -2755,6 +2755,42 @@ async function askRuling() {
     });
   } catch (err) { rulingJob = null; toast(`Couldn't ask: ${err.code || err.message}`, "bad"); render(); }
 }
+// ---- loading the manual from a PDF (admins). VEX's site turns away automated downloads, so a
+// person downloads the PDF and the app reads it here, in the browser, and saves it for the team
+// (same documents the sync would write; see sync/manual.mjs).
+let manualLoading = "";
+async function loadManualPdf(file) {
+  if (!file) return;
+  manualLoading = "Reading the PDF…"; render();
+  try {
+    const [{ getDocument }, { parseRules, manualVersion, pageText }] = await Promise.all([import("./vendor/pdfjs.js"), import("./manual-parse.js")]);
+    const pdf = await getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false, useSystemFonts: true }).promise;
+    const pages = [];
+    for (let i = 1; i <= pdf.numPages; i++) {
+      pages.push(pageText(await (await pdf.getPage(i)).getTextContent()));
+      if (i % 10 === 0) { manualLoading = `Reading page ${i} of ${pdf.numPages}…`; render(); }
+    }
+    const rules = parseRules(pages);
+    if (rules.length < 10) throw new Error(`only found ${rules.length} rules; is this the game manual?`);
+    manualLoading = `Saving ${rules.length} rules…`; render();
+    const chunk = (xs, n) => Array.from({ length: Math.ceil(xs.length / n) }, (_, i) => xs.slice(i * n, i * n + n));
+    const ruleParts = chunk(rules, 150), textParts = [];
+    let part = [], size = 0;
+    pages.forEach((t, i) => { if (size + t.length > 600e3 && part.length) { textParts.push(part); part = []; size = 0; } part.push({ page: i + 1, text: t }); size += t.length; });
+    if (part.length) textParts.push(part);
+    const batch = writeBatch(db);
+    ruleParts.forEach((items, i) => batch.set(doc(db, "manual", `${G.key}-rules-${i}`), { items }));
+    textParts.forEach((items, i) => batch.set(doc(db, "manual", `${G.key}-text-${i}`), { items }));
+    batch.set(doc(db, "manual", G.key), { url: "", file: file.name.slice(0, 120), version: manualVersion(file.name, pages), pages: pages.length, rules: rules.length,
+      chunks: ruleParts.length, textChunks: textParts.length, by: user.uid, nickname: S.nickname, fetchedAt: serverTimestamp(), updatedAt: serverTimestamp() });
+    await batch.commit();
+    toast(`Manual loaded: ${rules.length} rules from ${pages.length} pages`);
+  } catch (err) { toast(`Couldn't load the manual: ${err.code || err.message}`, "bad"); }
+  manualLoading = ""; render();
+}
+const manualUpload = label => h("label", { class: `btn${S.manualMeta ? "" : " primary"} upload` }, manualLoading || label,
+  h("input", { type: "file", accept: "application/pdf,.pdf", disabled: !!manualLoading || null, onchange: e => loadManualPdf(e.target.files[0]) }));
+
 const copyText = (t, what = "Copied") => navigator.clipboard?.writeText(t).then(() => toast(what), () => toast("Couldn't copy on this device.", "bad"));
 function rulingCard({ q, r, at }, i) {
   const outlookCls = r.outlook === "in our favour" ? "good" : r.outlook === "against us" ? "bad" : "";
@@ -2793,8 +2829,11 @@ views.manual = id => {
         meta?.url ? h("a", { class: "btn", href: meta.url, target: "_blank", rel: "noopener" }, "Official PDF", icon("ext")) : null)];
   }
   const out = [pagehead("Game manual", meta ? `${G.name}${meta.version ? ` · version ${meta.version}` : ""} · ${meta.rules} rules` : G.name)];
-  if (meta === null) return [...out, notice("The manual loads with the next refresh from VEX (within a day). Until then, open it on VEX's site.", "Not loaded yet", "manual"),
-    group(lrow({ href: G.key === "pushback" ? "https://www.vexrobotics.com/push-back-manual" : "https://www.vexrobotics.com/override-manual", title: "Game manual on vexrobotics.com", external: true }))];
+  const vexManual = G.key === "pushback" ? "https://www.vexrobotics.com/push-back-manual" : "https://www.vexrobotics.com/override-manual";
+  if (meta === null) return [...out, notice(S.admin ? "Download the game manual PDF from VEX's site, then load it here. The app reads it on this device and saves the rules for the whole team."
+      : "An admin loads the game manual PDF in this tab. Until then, open it on VEX's site.", "Not loaded yet", "manual"),
+    S.admin ? manualUpload("Load the manual (PDF)") : null,
+    group(lrow({ href: vexManual, title: "Game manual on vexrobotics.com", external: true }))];
   // Ask about a ruling
   const ta = h("textarea", { rows: 4, maxlength: 2000, placeholder: "What happened? e.g. Their robot held ours against the wall for about 8 seconds in the last 20 seconds and the ref didn't call it.",
     oninput: e => { rulingText = e.target.value; } }, rulingText);
@@ -2821,7 +2860,9 @@ views.manual = id => {
     searchBox("Search the rules: a word, or a rule like SG4", manualQuery, e => { manualQuery = e.target.value; drawList(); }),
     h("div", { class: "chips" }, ["All", ...groups.map(([p]) => p)].map(p => h("button", { type: "button", "aria-pressed": String(manualSection === p), onclick: () => { manualSection = p; render(); } },
       p === "All" ? "All" : `${p} · ${RULE_GROUPS.find(g => g[0] === p)[1]}`))),
-    list, count);
+    list, count,
+    S.admin ? h("div", { class: "row" }, manualUpload("Load a newer manual (PDF)"), h("a", { class: "btn plain", href: vexManual, target: "_blank", rel: "noopener" }, "VEX manual page", icon("ext"))) : null,
+    S.admin ? h("p", { class: "footnote" }, `Loaded${meta?.nickname ? ` by ${meta.nickname}` : ""} ${ago(meta?.updatedAt)}${meta?.file ? ` from ${meta.file}` : ""}. When VEX posts a new version, download the PDF and load it here.`) : null);
   return out;
 };
 
