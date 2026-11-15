@@ -513,6 +513,8 @@ async function quick() {
   for (const e of ctx.active) await syncEvent(e, { ours: true, ourNumber: ctx.team.number });
   ctx.watched = await watchedEvents(ctx);
   for (const e of ctx.watched) await syncEvent(e, { ours: false, ourNumber: ctx.team.number });
+  ctx.tracked = await trackedEvents(ctx);
+  for (const e of ctx.tracked.filter(e => !ended(e))) await syncEvent(e, { ours: false, ourNumber: ctx.team.number }).catch(err => console.log(`  tracked ${e.id}: ${err.message}`));
   await handleRequests(ctx);
   await writeStatus(ctx, { lastQuick: FieldValue.serverTimestamp() });
   if (!liveAtStart) await pastSeason({ wasLive: false }); // weekly Push Back refresh, before the long loop
@@ -528,11 +530,22 @@ async function quick() {
   await live(ctx);
 }
 
+/**
+ * Events the team chose to track in the app (tracked/<id>): they get the same live updates as our
+ * own events, every few seconds on their days, until someone untracks them.
+ */
+const trackedFrom = docs => docs.map(d => ({ id: Number(d.id), sku: d.get("sku") || "", name: d.get("name") || "", start: d.get("start"), end: d.get("end"),
+  location: { region: d.get("region") || "", country: d.get("country") || "" } }));
+async function trackedEvents(ctx) {
+  return trackedFrom((await db.collection("tracked").get()).docs).filter(e => !ctx.events.some(x => x.id === e.id));
+}
+const ended = e => e.end && Date.now() - ms(e.end) > config.quickDaysAfterEnd * DAY;
+
 /** Other events someone opened in the app, while they're on (drops ones that ended). */
 async function watchedEvents(ctx) {
   const out = [];
   for (const w of (await db.collection("watch").get()).docs) {
-    if (ctx.active?.some(e => String(e.id) === w.id)) continue;
+    if (ctx.active?.some(e => String(e.id) === w.id) || ctx.tracked?.some(e => String(e.id) === w.id)) continue;
     const end = ms(w.get("end"));
     if (end && Date.now() - end > config.quickDaysAfterEnd * DAY) { await w.ref.delete(); continue; }
     out.push({ id: Number(w.id) });
@@ -556,20 +569,24 @@ async function live(ctx) {
   const sigs = {}, seasons = {}, cache = {};
   let rounds = 0, chores = Date.now(), refreshed = Date.now(), turn = 0, asked = true, wasLive = false;
   const unsub = db.collection("requests").onSnapshot(snap => { if (!snap.empty) asked = true; }, err => console.log(`  request listener: ${err.message}`));
+  // Tracking or untracking an event in the app takes effect within a round.
+  const unsubTracked = db.collection("tracked").onSnapshot(snap => {
+    ctx.tracked = trackedFrom(snap.docs).filter(e => !ctx.events.some(x => x.id === e.id));
+  }, err => console.log(`  tracked listener: ${err.message}`));
   try { await assist.start(); } catch (err) { console.log(`  AI: ${err.message}`); }
   try { await alerts.init(); } catch (err) { console.log(`  Push alerts: ${err.message}`); }
   try {
     while (Date.now() < deadline) {
       const t = Date.now();
-      const running = ctx.events.filter(e => liveNow(e, t));
+      const running = [...ctx.events, ...(ctx.tracked || [])].filter(e => liveNow(e, t));
       if (!running.length && !config.alwaysOn) break;
-      if (running.length && !wasLive) console.log(`Live mode for ${running.map(e => e.sku).join(", ")}`);
+      if (running.length && !wasLive) console.log(`Live mode for ${running.map(e => e.sku || e.name || e.id).join(", ")}`);
       if (!running.length && (wasLive || !rounds)) console.log("Always on: checking our events every few seconds");
       wasLive = running.length > 0;
-      const others = [...(ctx.active || []), ...(ctx.watched || [])];
+      const others = [...(ctx.active || []), ...(ctx.tracked || []).filter(e => !ended(e)), ...(ctx.watched || [])];
       const targets = running.length ? running : others.length ? [others[turn++ % others.length]] : [];
       for (const e of targets) {
-        const ours = !ctx.watched?.includes(e);
+        const ours = ctx.events.some(x => x.id === e.id);
         try {
           const fresh = cache[e.id] && t - cache[e.id].at < config.liveFullSeconds * 1000;
           const r = await syncEvent(e, { ours, ourNumber: ctx.team.number, season: seasons[e.id], lastSig: sigs[e.id], reuse: fresh ? cache[e.id].parts : null });
@@ -599,7 +616,7 @@ async function live(ctx) {
       }
       await sleep(Math.max(0, (running.length ? config.liveSeconds : config.idleSeconds) * 1000 - (Date.now() - t)));
     }
-  } finally { unsub(); await assist.stop(); }
+  } finally { unsub(); unsubTracked(); await assist.stop(); }
   if (rounds) { await writeStatus(ctx, { lastQuick: FieldValue.serverTimestamp() }); console.log(`Fast loop: ${rounds} rounds, ${requests} requests`); }
   return rounds > 0;
 }

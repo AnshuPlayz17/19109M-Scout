@@ -125,6 +125,15 @@ service cloud.firestore {
     // Scout for me reports and match game plans (written by the sync), shared with the whole team.
     match /reports/{d} { allow read: if isMember(); }
     match /plans/{d} { allow read: if isMember(); }
+
+    // Events the team tracks (any event, not just ours): the sync keeps them live like our own.
+    match /tracked/{id} {
+      allow read, delete: if isMember();
+      allow create, update: if isMember()
+        && request.resource.data.keys().hasOnly(['name', 'sku', 'start', 'end', 'region', 'country', 'by', 'nickname', 'at'])
+        && request.resource.data.name is string && request.resource.data.name.size() <= 200
+        && request.resource.data.by == request.auth.uid && goodNickname(request.resource.data.nickname);
+    }
     // The game manual: rules and page text from VEX's PDF.
     // An admin can load it from a PDF in the app (VEX's site turns automated downloads away).
     match /manual/{d} { allow read: if isMember(); allow write: if isAdmin(); }

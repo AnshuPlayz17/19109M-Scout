@@ -75,6 +75,22 @@ watch("admins", doc(db, "meta", "admins"), s => {
   });
 });
 watch("ai", doc(db, "meta", "ai"), s => { S.ai = s.exists() ? s.data() : null; });
+// Events the team tracks (tracked/<id>): kept live by the sync like our own, listed on Home.
+watch("tracked", collection(db, "tracked"), q => {
+  S.tracked = q.docs.map(d => ({ id: Number(d.id), ...d.data() })).sort((a, b) => ms(a.start) - ms(b.start));
+  for (const t of S.tracked) if (Date.now() - ms(t.end || t.start) < 3 * DAY) watchEvent(t.id);
+});
+const isTracked = id => (S.tracked || []).some(t => String(t.id) === String(id));
+function toggleTrack(e) {
+  const ref = doc(db, "tracked", String(e.id));
+  if (isTracked(e.id)) { deleteDoc(ref).catch(err => toast(`Couldn't untrack (${err.code})`, "bad")); toast("No longer tracking this event"); return; }
+  setDoc(ref, { name: String(e.name || "").slice(0, 200), sku: e.sku || "", start: e.start || "", end: e.end || "", region: e.region || "", country: e.country || "",
+    by: user.uid, nickname: S.nickname, at: serverTimestamp() }).catch(err => toast(`Couldn't track (${err.code})`, "bad"));
+  toast("Tracking: live updates for the whole team");
+}
+const trackBtn = e => h("button", { type: "button", class: `btn small track${isTracked(e.id) ? " on" : ""}`, onclick: () => toggleTrack(e) },
+  icon(isTracked(e.id) ? "check" : "star"), isTracked(e.id) ? "Tracking" : "Track");
+
 const watchAutos = () => watch("autos", doc(db, "autos", "main"), s => { S.autos = s.exists() ? s.data() : { autos: [] }; });
 const watchLists = () => watch("lists", collection(db, "checklists"), s => {
   S.lists = s.docs.map(d => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) })).sort((a, b) => (a.order ?? 99) - (b.order ?? 99) || String(a.name).localeCompare(b.name));
@@ -173,7 +189,7 @@ const store = {
 const applyTheme = t => {
   if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
   const dark = t === "dark" || (t !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
-  document.querySelectorAll('meta[name="theme-color"]').forEach(m => m.setAttribute("content", dark ? "#0b1430" : "#f7f7f4"));
+  document.querySelectorAll('meta[name="theme-color"]').forEach(m => m.setAttribute("content", dark ? "#11151d" : "#f5f5f2"));
 };
 applyTheme(store.get("theme", "system"));
 matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => applyTheme(store.get("theme", "system")));
@@ -460,6 +476,11 @@ views.home = () => {
     tool("#/predict", "predict", "Predictor", "Any four teams"), tool("#/autos", "autos", "Autos", "Our routes"),
     tool("#/board", "board", "Whiteboard", "Draw on the field"), tool("#/pit", "pit", "Pit display", "Leave it at the pit")));
   right.push(section("Our events", h("a", { href: "#/events" }, "All events")), group(...ourEvents().map(eventRow)));
+  const tracked = (S.tracked || []).filter(t => Date.now() - ms(t.end || t.start) < 14 * DAY);
+  if (tracked.length) right.push(section("Tracked events", h("a", { href: "#/events", onclick: () => { evFilter = "tracked"; } }, "All tracked")),
+    group(...tracked.map(t => { const ev = S.events[t.id], live = isLive(t);
+      return lrow({ href: `#/event/${t.id}`, title: t.name, sub: [fmtDates(t), where_(t), ev?.matches?.length ? `${ev.matches.filter(m => m.scored).length} of ${ev.matches.length} played` : null].filter(Boolean).join(" · "),
+        trail: live ? h("span", { class: "pill live" }, "Live") : "" }); })));
   right.push(h("p", { class: "footnote" }, (fe && isLive(fe)) || S.status.alwaysOn ? `Checking for new results every ${checkEvery(fe && isLive(fe))} · ${S.status.season?.name || ""}` : `${S.status.season?.name || ""} · updated ${ago(S.status.lastQuick)}`));
   return [...out, h("div", { class: "cols" }, h("div", { class: "col" }, ...left), h("div", { class: "col" }, ...right))];
 };
@@ -472,18 +493,18 @@ views.events = () => {
   const count = h("p", { class: "footnote", style: "margin-top:0" });
   const drawList = () => {
     const q = evQuery.trim().toLowerCase();
-    let items = evFilter === "ours" ? ourEvents() : (S.index.events || []);
+    let items = evFilter === "ours" ? ourEvents() : evFilter === "tracked" ? (S.tracked || []) : (S.index.events || []);
     if (evFilter === "region") items = items.filter(e => e.region === region);
     if (evWhen === "upcoming") items = items.filter(e => ms(e.end || e.start) >= Date.now() - DAY);
     if (evWhen === "past") items = items.filter(e => ms(e.end || e.start) < Date.now() - DAY).reverse();
     if (q) items = items.filter(e => `${e.name} ${e.sku} ${e.city} ${e.region} ${e.country}`.toLowerCase().includes(q));
     list.replaceChildren(...items.slice(0, 80).map(eventRow));
     count.textContent = items.length > 80 ? `Showing 80 of ${items.length}. Search to narrow it down.` : "";
-    if (!items.length) list.append(h("p", { class: "empty" }, S.index.events?.length || evFilter === "ours" ? "No events match." : "Loading events…"));
+    if (!items.length) list.append(h("p", { class: "empty" }, evFilter === "tracked" ? "No tracked events. Open any event and tap Track." : S.index.events?.length || evFilter === "ours" ? "No events match." : "Loading events…"));
   };
   drawList();
   return [pagehead("Events"), searchBox("Name, city or event code", evQuery, e => { evQuery = e.target.value; drawList(); }),
-    seg([["ours", "Ours"], ["region", region], ["all", "Everywhere"]], evFilter, v => { evFilter = v; render(); }),
+    seg([["ours", "Ours"], ["tracked", "Tracked"], ["region", region], ["all", "Everywhere"]], evFilter, v => { evFilter = v; render(); }),
     h("div", { class: "chips" }, [["upcoming", "Upcoming"], ["past", "Past"], ["any", "Any time"]].map(([v, label]) => h("button", { type: "button", "aria-pressed": String(evWhen === v), onclick: () => { evWhen = v; render(); } }, label))),
     list, count];
 };
@@ -498,6 +519,7 @@ views.event = (id, tab) => {
     const e = S.index.events?.find(x => String(x.id) === String(id));
     const asked = S.requested.has(`event:${id}`);
     return [pagehead(e?.name || `Event ${id}`, e ? `${fmtDates(e)} · ${where_(e)}` : ""),
+      e ? h("div", { class: "row" }, trackBtn(e), h("span", { class: "muted small" }, "Tracking loads it and keeps it live for everyone.")) : null,
       h("div", { class: "notice" }, icon("download"), h("b", {}, "Not loaded yet"),
         h("span", {}, "It shows up after the next refresh, within the hour (within a minute while one of our events is live). It stays up to date while the event runs."),
         h("button", { class: "btn primary", disabled: asked, onclick: () => request("event", id) }, asked ? "Requested" : "Load this event")),
@@ -511,7 +533,7 @@ views.event = (id, tab) => {
   const out = [
     h("header", { class: "pagehead" }, h("h1", {}, ev.name),
       h("p", {}, [fmtDates(ev), where_(ev), `${ev.teams.length} teams`, ev.matches.length ? `${scored} of ${ev.matches.length} played` : null].filter(Boolean).join(" · ")),
-      isLive(ev) ? h("span", { class: "pill live", style: "align-self:flex-start;margin-top:4px" }, "Live") : null),
+      h("div", { class: "row", style: "margin-top:4px" }, isLive(ev) ? h("span", { class: "pill live" }, "Live") : null, ev.ours ? null : trackBtn(ev))),
     h("nav", { class: "seg", "aria-label": "Event sections" }, tabs.map(([k, label]) => h("a", { href: `#/event/${id}/${k}`, "aria-current": k === tab ? "page" : null }, label))),
   ];
   if (tab === "ours") {
