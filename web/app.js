@@ -2747,7 +2747,7 @@ async function askRuling() {
       if (j.step) rulingStep = j.step;
       if (j.status === "done" || j.status === "error") {
         un(); rulingJob = null; rulingStep = "";
-        if (j.status === "done" && j.ruling) { rulings = [{ q: text, r: j.ruling, at: Date.now() }, ...rulings].slice(0, 15); store.set(`rulings.${G.key}`, rulings); rulingText = ""; }
+        if (j.status === "done" && j.ruling) { rulings = [{ q: text, r: j.ruling, at: Date.now() }, ...rulings].slice(0, 15); store.set(`rulings.${G.key}`, rulings); rulingText = ""; openRuling = 0; }
         else toast(j.error || "Couldn't answer that one.", "bad");
         deleteDoc(ref).catch(() => {});
       }
@@ -2792,77 +2792,89 @@ const manualUpload = label => h("label", { class: `btn${S.manualMeta ? "" : " pr
   h("input", { type: "file", accept: "application/pdf,.pdf", disabled: !!manualLoading || null, onchange: e => loadManualPdf(e.target.files[0]) }));
 
 const copyText = (t, what = "Copied") => navigator.clipboard?.writeText(t).then(() => toast(what), () => toast("Couldn't copy on this device.", "bad"));
+const ruleChip = (id, known = true) => known ? h("a", { class: "rulechip", href: `#/manual/${encodeURIComponent(id)}` }, id) : h("span", { class: "rulechip off", title: "Not a rule in the loaded manual" }, id);
+const OUTLOOK = { "in our favour": ["good", "Likely in our favour"], "against us": ["bad", "Likely against us"], unclear: ["warn", "Could go either way"] };
+let openRuling = 0;
 function rulingCard({ q, r, at }, i) {
-  const outlookCls = r.outlook === "in our favour" ? "good" : r.outlook === "against us" ? "bad" : "";
-  return h("section", { class: "card ruling" },
-    h("div", { class: "row between" }, h("span", { class: "eyebrow" }, `You asked · ${ago(new Date(at).toISOString())}`),
-      h("button", { type: "button", class: "btn small plain", onclick: () => { rulings.splice(i, 1); store.set(`rulings.${G.key}`, rulings); render(); } }, "Remove")),
-    h("p", { class: "muted small asked" }, q),
-    h("div", { class: "row" }, h("span", { class: `pill outlook ${outlookCls}` }, r.outlook === "in our favour" ? "Likely in our favour" : r.outlook === "against us" ? "Likely against us" : "Unclear")),
-    h("p", {}, r.summary),
-    r.rules?.length ? h("div", { class: "rulequotes" }, r.rules.map(x => h("a", { class: "rulequote", href: x.known ? `#/manual/${encodeURIComponent(x.id)}` : null },
-      h("div", { class: "row between" }, h("b", {}, `<${x.id}>${x.title ? ` ${x.title}` : ""}`), x.page ? h("span", { class: "muted small" }, `p. ${x.page}`) : null),
-      h("blockquote", {}, x.quote, x.verified ? null : h("span", { class: "unverified" }, " (not found word for word in the manual: check it)")),
-      h("span", { class: "muted small" }, x.why)))) : null,
-    h("div", { class: "toref" }, h("div", { class: "row between" }, h("span", { class: "eyebrow" }, "Say to the head referee"),
-      h("button", { type: "button", class: "btn small", onclick: () => copyText(r.sayToRef) }, icon("copy"), "Copy")), h("p", {}, r.sayToRef)),
-    h("div", { class: "toref" }, h("div", { class: "row between" }, h("span", { class: "eyebrow" }, "Ask the head referee"),
-      h("button", { type: "button", class: "btn small", onclick: () => copyText(r.askRef) }, icon("copy"), "Copy")), h("p", {}, r.askRef)),
-    r.qna ? h("div", { class: "toref" }, h("div", { class: "row between" }, h("span", { class: "eyebrow" }, "For the official Q&A"),
-      h("button", { type: "button", class: "btn small", onclick: () => copyText(r.qna) }, icon("copy"), "Copy")), h("p", {}, r.qna)) : null,
-    h("p", { class: "footnote" }, `From manual ${r.version ? `version ${r.version}` : ""}. AI help, not a ruling: the head referee decides. Be calm and polite; only the drive team's student talks to the head referee.`));
+  const [cls, label] = OUTLOOK[r.outlook] || OUTLOOK.unclear, A = r.argument;
+  const copyBtn = (text, what) => h("button", { type: "button", class: "iconbtn", "aria-label": `Copy ${what}`, title: "Copy", onclick: () => copyText(text, `${what[0].toUpperCase()}${what.slice(1)} copied`) }, icon("copy"));
+  return h("article", { class: "ruling" },
+    h("header", { class: "rhead" },
+      h("span", { class: `verdict-dot ${cls}` }, h("i"), label),
+      h("span", { class: "muted small" }, ago(new Date(at).toISOString())),
+      h("button", { type: "button", class: "iconbtn", "aria-label": "Remove", title: "Remove", onclick: () => { rulings.splice(i, 1); store.set(`rulings.${G.key}`, rulings); render(); } }, icon("close"))),
+    h("p", { class: "asked" }, q),
+    h("p", { class: "rsum" }, r.summary),
+    A ? h("section", { class: "case" },
+      h("h3", {}, "Our case"),
+      h("p", { class: "claim" }, A.claim),
+      h("ol", { class: "points" }, (A.points || []).map(p => h("li", {}, h("span", {}, p.point), ruleChip(p.rule, p.known !== false)))),
+      A.counter ? h("div", { class: "counter" }, h("span", { class: "lbl" }, "If they say"), h("p", {}, A.counter), h("span", { class: "lbl" }, "We answer"), h("p", {}, A.response)) : null,
+      A.weakness ? h("p", { class: "weak" }, h("b", {}, "Weak spot: "), A.weakness) : null) : null,
+    h("section", { class: "say" }, h("div", { class: "sayhead" }, h("h3", {}, "Say to the head referee"), copyBtn(r.sayToRef, "what to say")), h("p", {}, r.sayToRef)),
+    h("div", { class: "askline" }, h("span", { class: "lbl" }, "Ask"), h("p", {}, r.askRef), copyBtn(r.askRef, "question")),
+    r.rules?.length ? h("section", { class: "cited" }, h("h3", {}, "Rules"),
+      r.rules.map(x => h("details", {}, h("summary", {}, ruleChip(x.id, x.known), h("span", { class: "t" }, x.title || x.why), x.page ? h("span", { class: "pg" }, `p. ${x.page}`) : null),
+        h("blockquote", {}, x.quote), x.verified ? null : h("p", { class: "unverified" }, "Not found word for word in the manual: check it before quoting it."),
+        h("p", { class: "muted small" }, x.why)))) : null,
+    r.qna ? h("details", { class: "qna" }, h("summary", {}, "Draft for the official Q&A"), h("p", {}, r.qna), h("button", { type: "button", class: "btn small", onclick: () => copyText(r.qna, "Q&A draft copied") }, icon("copy"), "Copy")) : null,
+    h("p", { class: "rfoot" }, "AI help from the manual, not a ruling. Only the drive team's student talks to the head referee, calmly, between matches."));
 }
 views.manual = id => {
   watchManual();
   const meta = S.manualMeta, rules = S.rules?.items || [];
+  const vexManual = G.key === "pushback" ? "https://www.vexrobotics.com/push-back-manual" : "https://www.vexrobotics.com/override-manual";
   if (id) {
     const r = rules.find(x => x.id === id);
-    if (!r) return [pagehead(`<${id}>`), meta === undefined || !S.rules ? skeleton(200) : notice("That rule isn't in the current manual.", "Not found", "manual")];
+    if (!r) return [pagehead(id), meta === undefined || !S.rules ? skeleton(200) : notice("That rule isn't in the loaded manual.", "Not found", "manual")];
     const refs = [...new Set((r.text.match(/<([A-Z]{1,3}\d{1,2}[a-z]?)>/g) || []).map(t => t.slice(1, -1)).filter(x => x !== r.id && rules.some(y => y.id === x)))];
-    return [pagehead(`<${r.id}> ${r.title}`, `Page ${r.page}${meta?.version ? ` · manual ${meta.version}` : ""}`),
-      card(h("div", { class: "ruletext" }, r.text.replace(/^<[^>]+>\s*/, ""))),
-      refs.length ? section("Mentioned in this rule") : null,
-      refs.length ? group(...refs.map(x => { const y = rules.find(z => z.id === x); return lrow({ href: `#/manual/${encodeURIComponent(x)}`, title: `<${x}> ${y.title}`, sub: `Page ${y.page}` }); })) : null,
+    return [h("header", { class: "pagehead rulehead" }, h("span", { class: "rulechip big" }, r.id), h("h1", {}, r.title), h("p", {}, `Page ${r.page}${meta?.version ? ` · version ${meta.version}` : ""}`)),
+      h("article", { class: "card ruletext" }, r.text.replace(/^<[^>]+>\s*/, "")),
+      refs.length ? h("div", { class: "refs" }, h("span", { class: "muted small" }, "Mentions"), refs.map(x => ruleChip(x))) : null,
       h("div", { class: "row" },
-        h("button", { type: "button", class: "btn primary", onclick: () => { rulingText = `About <${r.id}>: `; location.hash = "#/manual"; } }, icon("scout"), "Ask about this rule"),
-        h("button", { type: "button", class: "btn", onclick: () => copyText(`<${r.id}> ${r.text.replace(/^<[^>]+>\s*/, "").replace(/\s+/g, " ")}`, "Rule copied") }, icon("copy"), "Copy rule"),
-        meta?.url ? h("a", { class: "btn", href: meta.url, target: "_blank", rel: "noopener" }, "Official PDF", icon("ext")) : null)];
+        h("button", { type: "button", class: "btn primary", onclick: () => { rulingText = `About ${r.id}: `; location.hash = "#/manual"; } }, icon("scout"), "Ask about this rule"),
+        h("button", { type: "button", class: "btn", onclick: () => copyText(`<${r.id}> ${r.text.replace(/^<[^>]+>\s*/, "").replace(/\s+/g, " ")}`, "Rule copied") }, icon("copy"), "Copy"))];
   }
-  const out = [pagehead("Game manual", meta ? `${G.name}${meta.version ? ` · version ${meta.version}` : ""} · ${meta.rules} rules` : G.name)];
-  const vexManual = G.key === "pushback" ? "https://www.vexrobotics.com/push-back-manual" : "https://www.vexrobotics.com/override-manual";
-  if (meta === null) return [...out, notice(S.admin ? "Download the game manual PDF from VEX's site, then load it here. The app reads it on this device and saves the rules for the whole team."
-      : "An admin loads the game manual PDF in this tab. Until then, open it on VEX's site.", "Not loaded yet", "manual"),
-    S.admin ? manualUpload("Load the manual (PDF)") : null,
-    group(lrow({ href: vexManual, title: "Game manual on vexrobotics.com", external: true }))];
-  // Ask about a ruling
-  const ta = h("textarea", { rows: 4, maxlength: 2000, placeholder: "What happened? e.g. Their robot held ours against the wall for about 8 seconds in the last 20 seconds and the ref didn't call it.",
-    oninput: e => { rulingText = e.target.value; } }, rulingText);
-  out.push(h("form", { class: "card askrule", onsubmit: e => { e.preventDefault(); askRuling(); } },
-    h("div", {}, h("h3", {}, "Ask about a ruling"), h("p", { class: "muted small" }, "Describe what happened. Scout finds the rules that apply, quotes them, and writes what to say to the head referee.")),
-    ta,
-    h("button", { type: "submit", class: "btn primary wide", disabled: !!rulingJob || !aiReady() }, icon("scout"), rulingJob ? rulingStep || "Reading the manual…" : "Find the rules"),
-    !aiReady() && S.ai !== undefined ? h("p", { class: "footnote" }, "Needs AI: an admin adds the ANTHROPIC_API_KEY secret.") : null));
-  out.push(...rulings.map(rulingCard));
-  // Browse and search
+  const out = [pagehead("Game manual", meta ? [G.name, meta.version && `version ${meta.version}`, `${meta.rules} rules`].filter(Boolean).join(" · ") : G.name)];
+  if (meta === null) return [...out, notice(S.admin ? "Download the game manual PDF from VEX, then load it here. The app reads it on this device and saves the rules for the whole team."
+      : "An admin loads the game manual PDF here. Until then, open it on VEX's site.", "Not loaded yet", "manual"),
+    S.admin ? manualUpload("Load the manual (PDF)") : null, group(lrow({ href: vexManual, title: "Game manual on vexrobotics.com", external: true }))];
+
+  // Ask
+  const ta = h("textarea", { rows: 3, maxlength: 2000, placeholder: "What happened? Who did what, when in the match, what the ref called.",
+    oninput: e => { rulingText = e.target.value; e.target.style.height = "auto"; e.target.style.height = `${Math.min(260, e.target.scrollHeight)}px`; } }, rulingText);
+  out.push(h("form", { class: "askcase", onsubmit: e => { e.preventDefault(); askRuling(); } },
+    h("label", { class: "lbl" }, "Ask about a ruling"), ta,
+    h("div", { class: "askrow" },
+      h("span", { class: "muted small" }, rulingJob ? (rulingStep || "Reading the manual…") : aiReady() ? "Finds the rules and builds our case" : S.ai === undefined ? "" : "Needs AI: an admin adds the API key"),
+      h("button", { type: "submit", class: "btn primary", disabled: !!rulingJob || !aiReady() }, rulingJob ? h("span", { class: "spinner sm", "aria-hidden": "true" }) : icon("scout"), rulingJob ? "Working" : "Build our case"))));
+  if (rulings.length) {
+    const k = Math.min(openRuling, rulings.length - 1);
+    out.push(rulingCard(rulings[k], k));
+    if (rulings.length > 1) out.push(section("Earlier"), h("div", { class: "group-list" }, rulings.map((x, i) => i === k ? null : h("button", { type: "button", class: "lrow noicon", onclick: () => { openRuling = i; render(); scrollTo(0, 0); } },
+      h("span", { class: "tx" }, h("b", {}, x.q), h("span", {}, `${(OUTLOOK[x.r.outlook] || OUTLOOK.unclear)[1]} · ${ago(new Date(x.at).toISOString())}`)), h("span"), icon("chev", "chev")))));
+  }
+
+  // Browse
   const groups = RULE_GROUPS.filter(([p]) => rules.some(r => ruleGroup(r.id) === p));
-  const list = h("div", { class: "group-list" }), count = h("p", { class: "footnote", style: "margin-top:0" });
+  const list = h("div", { class: "group-list rulelist" }), count = h("p", { class: "footnote", style: "margin-top:0" });
   const drawList = () => {
-    const q = manualQuery.trim().toLowerCase();
+    const q = manualQuery.trim().toLowerCase().replace(/[<>]/g, "");
     let items = rules;
     if (manualSection !== "All") items = items.filter(r => ruleGroup(r.id) === manualSection);
-    if (q) items = items.filter(r => r.id.toLowerCase() === q.replace(/[<>]/g, "") || `${r.id} ${r.text}`.toLowerCase().includes(q));
-    list.replaceChildren(...items.slice(0, 120).map(r => lrow({ href: `#/manual/${encodeURIComponent(r.id)}`, title: `<${r.id}> ${r.title}`, sub: `Page ${r.page}` })));
+    if (q) items = items.filter(r => r.id.toLowerCase() === q || `${r.id} ${r.text}`.toLowerCase().includes(q));
+    list.replaceChildren(...items.slice(0, 150).map(r => h("a", { class: "rulerow", href: `#/manual/${encodeURIComponent(r.id)}` }, h("span", { class: "rulechip" }, r.id), h("span", { class: "t" }, r.title), h("span", { class: "pg" }, r.page))));
     if (!items.length) list.append(h("p", { class: "empty" }, S.rules ? "No rules match." : "Loading the manual…"));
-    count.textContent = items.length > 120 ? `Showing 120 of ${items.length}. Search to narrow it down.` : "";
+    count.textContent = items.length > 150 ? `Showing 150 of ${items.length}. Search to narrow it down.` : "";
   };
   drawList();
-  out.push(section("Rules", meta?.url ? h("a", { href: meta.url, target: "_blank", rel: "noopener" }, "Official PDF") : null),
-    searchBox("Search the rules: a word, or a rule like SG4", manualQuery, e => { manualQuery = e.target.value; drawList(); }),
+  out.push(section("Rules", meta?.url ? h("a", { href: meta.url, target: "_blank", rel: "noopener" }, "PDF") : null),
+    searchBox("Search: a word, or a rule like SG4", manualQuery, e => { manualQuery = e.target.value; drawList(); }),
     h("div", { class: "chips" }, ["All", ...groups.map(([p]) => p)].map(p => h("button", { type: "button", "aria-pressed": String(manualSection === p), onclick: () => { manualSection = p; render(); } },
-      p === "All" ? "All" : `${p} · ${RULE_GROUPS.find(g => g[0] === p)[1]}`))),
-    list, count,
-    S.admin ? h("div", { class: "row" }, manualUpload("Load a newer manual (PDF)"), h("a", { class: "btn plain", href: vexManual, target: "_blank", rel: "noopener" }, "VEX manual page", icon("ext"))) : null,
-    S.admin ? h("p", { class: "footnote" }, `Loaded${meta?.nickname ? ` by ${meta.nickname}` : ""} ${ago(meta?.updatedAt)}${meta?.file ? ` from ${meta.file}` : ""}. When VEX posts a new version, download the PDF and load it here.`) : null);
+      p === "All" ? "All" : RULE_GROUPS.find(g => g[0] === p)[1]))),
+    list, count);
+  if (S.admin) out.push(h("div", { class: "adminrow" }, manualUpload("Load a newer PDF"),
+    h("span", { class: "muted small" }, `Loaded${meta?.nickname ? ` by ${meta.nickname}` : ""} ${ago(meta?.updatedAt)}${meta?.file ? ` · ${meta.file}` : ""}`)));
   return out;
 };
 
