@@ -173,7 +173,7 @@ const store = {
 const applyTheme = t => {
   if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
   const dark = t === "dark" || (t !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
-  document.querySelectorAll('meta[name="theme-color"]').forEach(m => m.setAttribute("content", dark ? "#0d1514" : "#f6f2ea"));
+  document.querySelectorAll('meta[name="theme-color"]').forEach(m => m.setAttribute("content", dark ? "#0b1430" : "#f7f7f4"));
 };
 applyTheme(store.get("theme", "system"));
 matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => applyTheme(store.get("theme", "system")));
@@ -436,7 +436,7 @@ views.home = () => {
   }
   if (ev?.ourMatches?.length) {
     const ours = ev.ourMatches.map(om => ({ om, m: ev.matches.find(x => x.id === om.id) })).filter(x => x.m);
-    const todo = ours.filter(x => !x.m.scored), done = ours.filter(x => x.m.scored).reverse();
+    const todo = ours.filter(x => !x.m.scored && !x.m.skipped), done = ours.filter(x => x.m.scored).reverse();
     if (todo.length) {
       const { om, m } = todo[0];
       const names = ns => ns.map(n => n === us() ? "Us" : teamName(n) || "").filter(Boolean).join(" · ");
@@ -520,7 +520,7 @@ views.event = (id, tab) => {
       const res = ev.ourMatches.map(om => ({ om, m: ev.matches.find(x => x.id === om.id) })).filter(x => x.m);
       const played = res.filter(x => x.m.scored);
       const wins = played.filter(({ om, m }) => m[om.color].score > m[om.color === "red" ? "blue" : "red"].score).length;
-      const upcoming = res.filter(x => !x.m.scored && x.om.win !== null);
+      const upcoming = res.filter(x => !x.m.scored && !x.m.skipped && x.om.win !== null);
       out.push(glance([[`${wins}-${played.length - wins}`, "Won-lost"], [res.length - played.length, "To play"], [upcoming.length ? pct(upcoming.reduce((s, x) => s + x.om.win, 0) / upcoming.length) : "–", "Avg win chance"]], "three"));
       out.push(h("div", { class: "mlist" }, res.map(({ om, m }) => {
         const ours = m[om.color].score, theirs = m[om.color === "red" ? "blue" : "red"].score;
@@ -1288,7 +1288,7 @@ views.board = () => {
     onIdle: () => { if (redrawAfterStroke) { redrawAfterStroke = false; refresh(); } } });
   // Robots are named after our next match: us and our partner, then the opponents.
   const fe = focusEvent(), ev = fe && S.events[fe.id];
-  const om = ev?.ourMatches?.find(x => !ev.matches.find(m => m.id === x.id)?.scored);
+  const om = ev?.ourMatches?.find(x => { const m = ev.matches.find(y => y.id === x.id); return m && !m.scored && !m.skipped; });
   board.setTeams({ us: us(), partner: om?.partners?.[0], opponents: om?.opponents, color: om?.color || "red" });
   return [h("div", { class: "wb-head" },
       h("button", { type: "button", class: "back", onclick: exitTo }, icon("back"), h("span", {}, "Done")),
@@ -1536,7 +1536,7 @@ views.pit = () => {
   const cfg = S.pitCfg || {}, hidden = new Set(cfg.hide || []), show = k => !hidden.has(k);
   const fe = S.status ? focusEvent() : null, ev = fe && S.events[fe.id];
   const ours = ev?.ourMatches?.map(om => ({ om, m: ev.matches.find(x => x.id === om.id) })).filter(x => x.m) || [];
-  const todo = ours.filter(x => !x.m.scored), done = ours.filter(x => x.m.scored).reverse();
+  const todo = ours.filter(x => !x.m.scored && !x.m.skipped), done = ours.filter(x => x.m.scored).reverse();
   const next = todo[0];
   const r = ev?.rankings?.find(x => x.team === us()), o = ev?.oprs?.[us()], sk = ev?.skills?.find(x => x.team === us());
   const [status, detail] = pitStatus(fe, ev, next);
@@ -1623,13 +1623,13 @@ views.pit = () => {
 // ---- "Queue now" alerts. Our next match is due when it's at most QUEUE.ahead matches away in
 // our division, or QUEUE.minutes from its scheduled time (same rule as sync/alerts.mjs, which
 // sends the phone notifications). In the app: a banner on every page, plus a chime and a buzz once.
-const QUEUE = { ahead: 3, minutes: 10 };
+const QUEUE = { ahead: 2, minutes: 5 };
 function queueState(ev) {
   if (!ev?.matches) return null;
-  const next = ev.matches.find(m => !m.scored && (m.red.teams.includes(us()) || m.blue.teams.includes(us())));
+  const next = ev.matches.find(m => !m.scored && !m.skipped && (m.red.teams.includes(us()) || m.blue.teams.includes(us())));
   if (!next) return null;
   const same = ev.matches.filter(m => m.div === next.div && m.round === next.round);
-  const ahead = same.slice(0, same.indexOf(next)).filter(m => !m.scored).length;
+  const ahead = same.slice(0, same.indexOf(next)).filter(m => !m.scored && !m.skipped).length;
   const mins = (ms(next.scheduled) - Date.now()) / 60e3;
   return { next, ahead, mins, due: ahead <= QUEUE.ahead || (Number.isFinite(mins) && mins <= QUEUE.minutes) };
 }

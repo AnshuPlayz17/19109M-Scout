@@ -104,11 +104,39 @@ const compactTeam = t => ({ id: t.id, number: t.number, name: t.team_name || "",
 const chunk = (xs, n) => Array.from({ length: Math.ceil(xs.length / n) }, (_, i) => xs.slice(i * n, i * n + n));
 const hash = x => createHash("sha256").update(JSON.stringify(x)).digest("hex").slice(0, 16);
 
+// A match counts as played when VEX Events marks it scored or it has a score: at some events the
+// "scored" flag never turns on even though scores come through.
 const compactMatch = (m, div) => {
   const side = c => { const a = alliance(m, c); return { score: Number(a.score) || 0, teams: allianceTeams(a) }; };
+  const red = side("red"), blue = side("blue");
   return { id: m.id, name: m.name, round: m.round, instance: m.instance, num: m.matchnum, scheduled: m.scheduled || null,
-    started: m.started || null, field: m.field || "", scored: !!m.scored, div, red: side("red"), blue: side("blue") };
+    started: m.started || null, field: m.field || "", scored: !!m.scored || red.score + blue.score > 0, div, red, blue };
 };
+/**
+ * Matches run in order, so an unscored match with a later match of the same round already scored
+ * was played (or skipped) and its result just never came through: mark it `skipped` so the app
+ * moves on to the real next match instead of waiting on it all day.
+ */
+function markSkipped(matches) {
+  const byRound = {};
+  for (const m of matches) (byRound[m.round] ||= []).push(m);
+  for (const list of Object.values(byRound)) {
+    list.sort((a, b) => a.instance - b.instance || a.num - b.num);
+    let last = -1;
+    list.forEach((m, i) => { if (m.scored) last = i; });
+    list.forEach((m, i) => { m.skipped = !m.scored && i < last; });
+  }
+  return matches;
+}
+const rawLogged = new Set();
+/** Logs one raw match once, when an event has a schedule but nothing scored long after it started. */
+function explainUnscored(e, raw) {
+  if (rawLogged.has(e.id) || !raw.length || raw.some(m => m.scored)) return;
+  const first = raw.find(m => m.scheduled) || raw[0];
+  if (!(Date.now() - Date.parse(first.scheduled || e.start) > 2 * 3600e3)) return;
+  rawLogged.add(e.id);
+  console.log(`  ${e.sku}: ${raw.length} matches, none marked scored. First match as VEX Events sends it: ${JSON.stringify(first).slice(0, 600)}`);
+}
 // model.mjs reads RobotEvents-shaped matches; rebuild that shape from the compact one.
 const asApiMatch = m => ({ id: m.id, round: m.round, scored: m.scored,
   alliances: ["red", "blue"].map(c => ({ color: c, score: m[c].score, teams: m[c].teams.map(n => ({ team: { name: n } })) })) });
@@ -183,7 +211,9 @@ async function syncEvent(summary, { ours, ourNumber, season: seasonCache, lastSi
   for (const d of e.divisions || []) {
     const prev = reuse?.divs[d.id];
     if (prev && !prev.ours) { divs[d.id] = prev; continue; }
-    const dm = (await all(`events/${e.id}/divisions/${d.id}/matches`)).map(m => compactMatch(m, d.name));
+    const rawMatches = await all(`events/${e.id}/divisions/${d.id}/matches`);
+    explainUnscored(e, rawMatches);
+    const dm = markSkipped(rawMatches.map(m => compactMatch(m, d.name)));
     const dr = (await all(`events/${e.id}/divisions/${d.id}/rankings`)).map(r => ({
       div: d.name, rank: r.rank, team: r.team?.name, wins: r.wins, losses: r.losses, ties: r.ties, wp: r.wp, ap: r.ap, sp: r.sp, high: r.high_score, avg: r.average_points,
     }));

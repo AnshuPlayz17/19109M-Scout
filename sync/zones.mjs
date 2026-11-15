@@ -1,4 +1,4 @@
-// Event days, 8am to 6pm in the event's own time zone (RobotEvents dates have no useful
+// Event days, 7am to 8pm in the event's own time zone (RobotEvents dates have no useful
 // end time). RobotEvents gives a region and country but no zone, so look the zone up.
 const ZONES = {
   // US states
@@ -36,5 +36,5 @@ const localDay = (t, zone) => new Date(t).toLocaleDateString("en-CA", { timeZone
 const localHour = (t, zone) => Number(new Date(t).toLocaleString("en-US", { timeZone: zone, hour: "numeric", hourCycle: "h23" }));
 export function liveNow(e, t) {
   const zone = eventZone(e), day = localDay(t, zone), hour = localHour(t, zone);
-  return day >= localDay(Date.parse(e.start), zone) && day <= localDay(Date.parse(e.end || e.start), zone) && hour >= 8 && hour < 18;
+  return day >= localDay(Date.parse(e.start), zone) && day <= localDay(Date.parse(e.end || e.start), zone) && hour >= 7 && hour < 20;
 }

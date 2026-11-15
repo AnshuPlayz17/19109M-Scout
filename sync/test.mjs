@@ -61,9 +61,9 @@ console.log("all model tests passed");
   assert.equal(eventZone({ location: { region: "Unknownland", country: "China" } }), "Asia/Shanghai");
   assert.equal(eventZone({}), "America/Toronto");
   assert.equal(liveNow(worlds, Date.parse("2027-04-22T08:30:00-05:00")), true);   // 8:30 Dallas
-  assert.equal(liveNow(worlds, Date.parse("2027-04-22T07:30:00-05:00")), false);  // 7:30 Dallas (8:30 Toronto)
+  assert.equal(liveNow(worlds, Date.parse("2027-04-22T06:30:00-05:00")), false);  // 6:30 Dallas (7:30 Toronto)
   assert.equal(liveNow(worlds, Date.parse("2027-04-23T17:30:00-05:00")), true);   // last day, 5:30pm Dallas
-  assert.equal(liveNow(worlds, Date.parse("2027-04-23T18:30:00-05:00")), false);
+  assert.equal(liveNow(worlds, Date.parse("2027-04-23T20:30:00-05:00")), false);
   assert.equal(liveNow(local, Date.parse("2026-11-14T09:00:00-05:00")), true);
   assert.equal(liveNow(local, Date.parse("2026-11-15T09:00:00-05:00")), false);
   console.log("ok  live hours follow the event's time zone");
@@ -91,6 +91,12 @@ console.log("all model tests passed");
   ev.matches[1].scored = true;
   assert.equal(queueState(ev, "19109M", early, { matchesAhead: 3, minutes: 10 }).due, true, "3 ahead: queue");
   assert.equal(queueState({ matches: ev.matches.slice(0, 5) }, "19109M", early, { matchesAhead: 3, minutes: 10 }), null, "no match of ours");
+  // A match whose result never came through (skipped) doesn't hold up the queue or count as next.
+  const ev2 = { matches: [M(1, ["19109M", "A"], ["Z", "W"], false), M(2, ["X", "Y"], ["Z", "W"], true), M(3, ["X", "Y"], ["Z", "W"], false), M(4, ["19109M", "B"], ["Z", "W"], false)] };
+  ev2.matches[0].skipped = true;
+  const q2 = queueState(ev2, "19109M", early, { matchesAhead: 2, minutes: 5 });
+  assert.equal(q2.next.num, 4, "skips our match with no result");
+  assert.equal(q2.ahead, 1);
   console.log("ok  profile percentiles and queue alerts");
 }
 

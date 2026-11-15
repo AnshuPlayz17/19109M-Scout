@@ -12,10 +12,10 @@ import webpush from "web-push";
  * Same rule as queueState() in web/app.js.
  */
 export function queueState(event, us, now, { matchesAhead, minutes }) {
-  const next = event.matches.find(m => !m.scored && (m.red.teams.includes(us) || m.blue.teams.includes(us)));
+  const next = event.matches.find(m => !m.scored && !m.skipped && (m.red.teams.includes(us) || m.blue.teams.includes(us)));
   if (!next) return null;
   const same = event.matches.filter(m => m.div === next.div && m.round === next.round);
-  const ahead = same.slice(0, same.indexOf(next)).filter(m => !m.scored).length;
+  const ahead = same.slice(0, same.indexOf(next)).filter(m => !m.scored && !m.skipped).length;
   const mins = (Date.parse(next.scheduled) - now) / 60e3;
   const due = ahead <= matchesAhead || (Number.isFinite(mins) && mins <= minutes);
   return { next, ahead, mins, due };

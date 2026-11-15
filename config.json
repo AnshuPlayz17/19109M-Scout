@@ -19,8 +19,8 @@
   "aiNotesUsd": 1,
   "aiJobsAtOnce": 3,
   "reportAiTeams": 60,
-  "queueMatchesAhead": 3,
-  "queueMinutes": 10,
+  "queueMatchesAhead": 2,
+  "queueMinutes": 5,
   "aiMonthlyUsd": 75,
   "aiSeasonNotesPerRun": 300
 }

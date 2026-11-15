@@ -1,5 +1,5 @@
-/* 19109M Scout. Cream and ink with deep teal as the accent and orange as the highlight (opposite
-   on the colour wheel); red and blue only for alliances. Barlow for text, Barlow Semi Condensed for numbers, scores and team numbers.
+/* 19109M Scout. Studio white with deep cobalt ink and sun orange as the accent (opposite on the
+   colour wheel); red and blue only for alliances. Barlow for text, Barlow Semi Condensed for numbers, scores and team numbers.
    Fonts are stored with the site (fonts/, SIL Open Font License) so they work offline. */
 @font-face { font-family: "Barlow"; src: url("fonts/barlow-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
 @font-face { font-family: "Barlow"; src: url("fonts/barlow-500.woff2") format("woff2"); font-weight: 500; font-display: swap; }
@@ -9,39 +9,39 @@
 
 /* ---------- theme: System follows the device; Settings can pin Light or Dark (data-theme on <html>) */
 :root {
-  --bg: #f6f2ea; --surface: #fffdf9; --surface-2: #f0ebe1; --surface-3: #e4ddd0;
-  --fg: #172322; --muted: #5d6662; --faint: #969c97; --line: rgba(23, 35, 34, 0.1); --sep: rgba(23, 35, 34, 0.08);
-  --accent: #0f5f5b; --accent-fg: #ffffff; --accent-text: #0c514e; --accent-soft: rgba(15, 95, 91, 0.08);
-  --hi: #e2702a; --hi-text: #b8551a; --hi-soft: rgba(226, 112, 42, 0.12);
+  --bg: #f7f7f4; --surface: #ffffff; --surface-2: #f1f1ec; --surface-3: #e3e4de;
+  --fg: #14213d; --muted: #565f75; --faint: #9097a6; --line: rgba(20, 33, 61, 0.1); --sep: rgba(20, 33, 61, 0.08);
+  --accent: #ea5b0c; --accent-fg: #ffffff; --accent-text: #c2480a; --accent-soft: rgba(234, 91, 12, 0.1);
+  --hi: #ea5b0c; --hi-text: #c2480a; --hi-soft: rgba(234, 91, 12, 0.12);
   --red: #d23a3f; --red-text: #b42a30; --red-soft: rgba(210, 58, 63, 0.09);
   --blue: #2f6fdb; --blue-text: #2257b8; --blue-soft: rgba(47, 111, 219, 0.09);
   --good: #1d7a45; --bad: #c4362e; --warn: #a65b00; --yellow: #e0a800;
-  --bar-bg: rgba(246, 242, 234, 0.88);
-  --shadow: 0 1px 2px rgba(23, 35, 34, 0.05);
+  --bar-bg: rgba(247, 247, 244, 0.9);
+  --shadow: 0 1px 2px rgba(20, 33, 61, 0.06);
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0d1514; --surface: #15201f; --surface-2: #1c2928; --surface-3: #283735;
-    --fg: #ece8df; --muted: #9ca7a2; --faint: #6d7874; --line: rgba(236, 232, 223, 0.08); --sep: rgba(236, 232, 223, 0.07);
-    --accent: #2f9e94; --accent-fg: #ffffff; --accent-text: #6dd0c4; --accent-soft: rgba(47, 158, 148, 0.16);
-    --hi: #f0883e; --hi-text: #f6a165; --hi-soft: rgba(240, 136, 62, 0.16);
+    --bg: #0b1430; --surface: #12204a; --surface-2: #192a5a; --surface-3: #243668;
+    --fg: #f2f3f7; --muted: #a7b0c8; --faint: #6f7a98; --line: rgba(242, 243, 247, 0.09); --sep: rgba(242, 243, 247, 0.08);
+    --accent: #ff7a2e; --accent-fg: #1a0d04; --accent-text: #ff9a5c; --accent-soft: rgba(255, 122, 46, 0.16);
+    --hi: #ff7a2e; --hi-text: #ff9a5c; --hi-soft: rgba(255, 122, 46, 0.18);
     --red: #e0464b; --red-text: #ff8a8e; --red-soft: rgba(224, 70, 75, 0.14);
-    --blue: #4a8cff; --blue-text: #8fb8ff; --blue-soft: rgba(74, 140, 255, 0.14);
+    --blue: #5b95ff; --blue-text: #9cbcff; --blue-soft: rgba(91, 149, 255, 0.16);
     --good: #3ccf73; --bad: #ff6b61; --warn: #ffb547; --yellow: #ffcc33;
-    --bar-bg: rgba(13, 21, 20, 0.86); --shadow: none;
+    --bar-bg: rgba(11, 20, 48, 0.88); --shadow: none;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #0d1514; --surface: #15201f; --surface-2: #1c2928; --surface-3: #283735;
-  --fg: #ece8df; --muted: #9ca7a2; --faint: #6d7874; --line: rgba(236, 232, 223, 0.08); --sep: rgba(236, 232, 223, 0.07);
-  --accent: #2f9e94; --accent-fg: #ffffff; --accent-text: #6dd0c4; --accent-soft: rgba(47, 158, 148, 0.16);
-  --hi: #f0883e; --hi-text: #f6a165; --hi-soft: rgba(240, 136, 62, 0.16);
+  --bg: #0b1430; --surface: #12204a; --surface-2: #192a5a; --surface-3: #243668;
+  --fg: #f2f3f7; --muted: #a7b0c8; --faint: #6f7a98; --line: rgba(242, 243, 247, 0.09); --sep: rgba(242, 243, 247, 0.08);
+  --accent: #ff7a2e; --accent-fg: #1a0d04; --accent-text: #ff9a5c; --accent-soft: rgba(255, 122, 46, 0.16);
+  --hi: #ff7a2e; --hi-text: #ff9a5c; --hi-soft: rgba(255, 122, 46, 0.18);
   --red: #e0464b; --red-text: #ff8a8e; --red-soft: rgba(224, 70, 75, 0.14);
-  --blue: #4a8cff; --blue-text: #8fb8ff; --blue-soft: rgba(74, 140, 255, 0.14);
+  --blue: #5b95ff; --blue-text: #9cbcff; --blue-soft: rgba(91, 149, 255, 0.16);
   --good: #3ccf73; --bad: #ff6b61; --warn: #ffb547; --yellow: #ffcc33;
-  --bar-bg: rgba(13, 21, 20, 0.86); --shadow: none;
+  --bar-bg: rgba(11, 20, 48, 0.88); --shadow: none;
   color-scheme: dark;
 }
 :root {
@@ -872,9 +872,9 @@ header.top .right { display: flex; align-items: center; gap: 8px; justify-conten
 
 /* ---------- pit display: always dark, readable across the pit; rank, record and OPR only */
 .page-pit {
-  --bg: #0d1514; --surface: #15201f; --surface-2: #1c2928; --surface-3: #283735;
-  --fg: #ece8df; --muted: #a1a1aa; --faint: #71717a; --line: rgba(255, 255, 255, 0.07); --sep: #2a2a2e;
-  --accent: #2f9e94; --accent-text: #6dd0c4; --hi: #f0883e; --hi-text: #f6a165; --red: #e0514b; --red-text: #f87171; --blue: #4f8ef7; --blue-text: #8db4ff; --good: #4ade80; --bad: #f87171;
+  --bg: #0b1430; --surface: #12204a; --surface-2: #192a5a; --surface-3: #243668;
+  --fg: #f2f3f7; --muted: #a1a1aa; --faint: #71717a; --line: rgba(255, 255, 255, 0.07); --sep: #2a2a2e;
+  --accent: #ff7a2e; --accent-text: #ff9a5c; --hi: #ff7a2e; --hi-text: #ff9a5c; --red: #e0514b; --red-text: #f87171; --blue: #4f8ef7; --blue-text: #8db4ff; --good: #4ade80; --bad: #f87171;
   background: var(--bg); color: var(--fg); color-scheme: dark; }
 .page-pit .pit-status, .page-pit .pit-card { border: 0; }
 .page-pit .pit-stats { grid-template-columns: repeat(3, 1fr); border: 0; }
@@ -972,3 +972,9 @@ a.rulechip:hover { border-color: var(--accent); color: var(--accent-text); }
 .adminrow { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 4px; }
 .askrow .btn { white-space: nowrap; flex: none; }
 .askrow .muted { min-width: 0; }
+
+/* ---------- more sun orange: our number, the live event, the Ask button */
+.teamhead h1 { color: var(--accent); }
+.evcard.live { box-shadow: inset 4px 0 0 var(--hi), var(--shadow); }
+.chatfab { background: var(--accent); color: var(--accent-fg); }
+.sec a { color: var(--accent-text); }
