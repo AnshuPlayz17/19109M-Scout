@@ -41,10 +41,17 @@ export function createAssist({ db, FieldValue, config, GAMES, ai, syncTeamStats,
   const cost = (u, model = MODEL) => { const P = PRICES[model] || PRICES[RULING_MODEL]; return ((u.input_tokens || 0) * P.input + (u.output_tokens || 0) * P.output
     + (u.cache_creation_input_tokens || 0) * P.cacheWrite + (u.cache_read_input_tokens || 0) * P.cacheRead) / 1e6; };
   const caps = () => ({ monthCap: config.aiMonthlyUsd, cap: config.aiDailyUsd, perPerson: config.aiPerPersonUsd, notesCap: config.aiNotesUsd, model: MODEL });
+  // Admins (meta/admins) have no daily limit; only the monthly cap applies to them.
+  let adminUids = null, adminAt = 0;
+  async function isAdmin(uid) {
+    if (!adminUids || Date.now() - adminAt > 600e3) { adminUids = (await db.doc("meta/admins").get()).get("uids") || []; adminAt = Date.now(); }
+    return adminUids.includes(uid);
+  }
   /** Why this person (or the nightly notes, uid "notes") can't spend right now, or "" if they can. */
   async function blocked(uid) {
     const l = await loadLedger();
     if (l.monthUsd >= config.aiMonthlyUsd) return `The team's AI budget for this month ($${config.aiMonthlyUsd}) is used up. It resets on the 1st.`;
+    if (uid !== "notes" && await isAdmin(uid)) return "";
     if (l.usd >= config.aiDailyUsd) return `The team's AI budget for today ($${config.aiDailyUsd}) is used up. It resets at midnight.`;
     if (uid === "notes") return l.notes >= config.aiNotesUsd ? "notes budget used" : "";
     if ((l.people[uid] || 0) >= config.aiPerPersonUsd) return `You've used your share of today's AI budget ($${config.aiPerPersonUsd} each). It resets at midnight.`;

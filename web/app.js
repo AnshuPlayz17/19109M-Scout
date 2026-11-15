@@ -1734,7 +1734,7 @@ function aiSection() {
   const mine = today ? S.ai.people?.[user.uid] || 0 : 0;
   return [section("AI"),
     group(lrow({ info: true, ic: "scout", title: S.ai.enabled ? "Ask Scout and Scout for me" : "AI isn't set up", sub: S.ai.enabled
-      ? `This month: ${money(thisMonth ? S.ai.monthUsd || 0 : 0)} of ${money(S.ai.monthCap || 50)} · Today: ${money(today ? S.ai.usd || 0 : 0)} of ${money(S.ai.cap || 5)} · You today: ${money(mine)} of ${money(S.ai.perPerson || 2)}`
+      ? `This month: ${money(thisMonth ? S.ai.monthUsd || 0 : 0)} of ${money(S.ai.monthCap || 75)} · Today: ${money(today ? S.ai.usd || 0 : 0)} of ${money(S.ai.cap || 25)} · You today: ${money(mine)}${S.admin ? " (admin: no daily limit)" : ` of ${money(S.ai.perPerson || 5)}`}`
       : "An admin adds the ANTHROPIC_API_KEY secret on GitHub to turn it on." })),
     h("p", { class: "footnote" }, "Uses Claude Haiku (Anthropic's low-cost model). The monthly budget covers everyone, including the nightly AI team notes; daily limits reset at midnight Toronto time.")];
 }
