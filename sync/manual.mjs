@@ -12,16 +12,37 @@ export const MANUAL_PAGES = {
   override: "https://www.vexrobotics.com/override-manual",
   pushback: "https://www.vexrobotics.com/push-back-manual",
 };
-const UA = { "User-Agent": "Mozilla/5.0 (19109M Scout sync)" };
+// VEX's public short links that redirect to the current manual PDF (tried first).
+export const MANUAL_LINKS = {
+  override: ["https://link.vex.com/docs/26-27/v5rc-override-manual"],
+  pushback: ["https://link.vex.com/docs/25-26/v5rc-pushback-manual"],
+};
+const UA = { "User-Agent": "19109M-Scout-sync (team scouting app; github.com/AnshuPlayz17/19109M-Scout)" };
+const isPdf = res => res.ok && (/pdf/i.test(res.headers.get("content-type") || "") || /\.pdf($|\?)/i.test(res.url || ""));
 
-/** The current manual PDF's address: config.manualPdf.<game> if set, else found on VEX's page. */
+/**
+ * The current manual PDF's address. In order: a fixed address (config.json manualPdf.<game>, or
+ * MANUAL_PDF_<GAME> when testing); VEX's short link; the PDF linked on VEX's manual page.
+ * If VEX turns the sync away, set manualPdf in config.json to the PDF's address.
+ */
 export async function findManualPdf(game, config) {
-  // A fixed address (config.json manualPdf.<game>, or MANUAL_PDF_<GAME> when testing) skips the lookup.
   const fixed = config.manualPdf?.[game] || process.env[`MANUAL_PDF_${game.toUpperCase()}`];
   if (fixed) return fixed;
-  const res = await fetch(MANUAL_PAGES[game], { headers: UA });
-  if (!res.ok) throw new Error(`${res.status} from the manual page`);
-  return pickManualPdf(await res.text());
+  const tried = [];
+  for (const link of MANUAL_LINKS[game] || []) {
+    try {
+      const res = await fetch(link, { headers: UA, redirect: "follow" });
+      await res.body?.cancel().catch(() => {});
+      if (isPdf(res)) return res.url;
+      tried.push(`${res.status} from ${new URL(link).host}`);
+    } catch (err) { tried.push(`${new URL(link).host}: ${err.message}`); }
+  }
+  try {
+    const res = await fetch(MANUAL_PAGES[game], { headers: UA });
+    if (res.ok) { const url = pickManualPdf(await res.text()); if (url) return url; tried.push("no PDF on the manual page"); }
+    else tried.push(`${res.status} from the manual page`);
+  } catch (err) { tried.push(`manual page: ${err.message}`); }
+  throw new Error(`couldn't find the manual (${tried.join("; ")}); set manualPdf.${game} in config.json`);
 }
 /** The current manual's PDF among the links on VEX's page: old versions are renamed "...-obs.pdf" / "...-obsolete.pdf". */
 export function pickManualPdf(html) {
@@ -81,7 +102,6 @@ export function manualVersion(url, pages) {
 /** Fetches, parses and stores the manual when VEX has a new one (or ours is over a week old). */
 export async function syncManual({ db, FieldValue, chunk, config }, game, { force = false } = {}) {
   const url = await findManualPdf(game, config);
-  if (!url) throw new Error("no current manual PDF found on the manual page");
   const meta = (await db.doc(`manual/${game}`).get()).data();
   const fresh = meta?.url === url && Date.now() - (meta.fetchedAt?.toMillis?.() || 0) < 7 * 86400e3;
   if (fresh && !force) return { url, unchanged: true };
