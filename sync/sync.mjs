@@ -16,6 +16,7 @@ import { liveNow } from "./zones.mjs";
 import { computeOPR, computeRatings, predictMatches, predictorAccuracy, statsNote, allianceTeams, alliance, QUAL_ROUND } from "./model.mjs";
 import { createAssist } from "./assist.mjs";
 import { createAlerts } from "./alerts.mjs";
+import { syncManual } from "./manual.mjs";
 
 const here = new URL(".", import.meta.url);
 const config = JSON.parse(await readFile(new URL("../config.json", here), "utf8"));
@@ -485,6 +486,10 @@ async function quick() {
   await handleRequests(ctx);
   await writeStatus(ctx, { lastQuick: FieldValue.serverTimestamp() });
   if (!liveAtStart) await pastSeason({ wasLive: false }); // weekly Push Back refresh, before the long loop
+  // The game manual, if it isn't loaded yet (full refreshes keep it up to date).
+  for (const g of Object.keys(GAMES)) {
+    if (!(await db.doc(`manual/${g}`).get()).exists) await syncManual({ db, FieldValue, chunk, config }, g).catch(err => console.log(`Manual (${g}): ${err.message}`));
+  }
   // Percentiles for the app's hexagon charts, if they're missing or over a day old.
   for (const g of Object.keys(GAMES)) {
     const at = (await db.doc(`meta/scales-${g}`).get()).get("updatedAt")?.toMillis?.() || 0;
@@ -626,6 +631,8 @@ async function full() {
   }
   console.log(`Season stats for ${done}/${queue.length} teams`);
   await assist.writeScales(G.key); // percentiles for the app's hexagon charts
+  // The game manual (only downloaded again when VEX posts a new version, or weekly).
+  try { await syncManual({ db, FieldValue, chunk, config }, G.key); } catch (err) { console.log(`Manual (${G.key}): ${err.message}`); }
   await skillsBoard(allTeams.filter(t => t.region === config.region || ourEventTeams.has(t.number)), ctx.team.number);
 
   // Every one of our events, with notes for the next ones (AI only for upcoming/ongoing).

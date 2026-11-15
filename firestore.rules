@@ -109,13 +109,14 @@ service cloud.firestore {
     // keeps to the daily spending cap). Each person sees only their own.
     match /aiJobs/{id} {
       allow create: if isMember()
-        && request.resource.data.keys().hasOnly(['kind', 'by', 'nickname', 'at', 'game', 'status', 'messages', 'open', 'event', 'match'])
+        && request.resource.data.keys().hasOnly(['kind', 'by', 'nickname', 'at', 'game', 'status', 'messages', 'open', 'event', 'match', 'question'])
         && request.resource.data.by == request.auth.uid
         && request.resource.data.status == 'new'
         && request.resource.data.game in ['override', 'pushback']
         && goodNickname(request.resource.data.nickname)
         && ((request.resource.data.kind == 'chat' && request.resource.data.messages is list && request.resource.data.messages.size() <= 12)
           || (request.resource.data.kind == 'report' && request.resource.data.event is string && request.resource.data.event.size() <= 12)
+          || (request.resource.data.kind == 'rules' && request.resource.data.question is string && request.resource.data.question.size() > 0 && request.resource.data.question.size() <= 2000)
           || (request.resource.data.kind == 'review' && request.resource.data.event is string && request.resource.data.event.size() <= 12)
           || (request.resource.data.kind == 'plan' && request.resource.data.event is string && request.resource.data.event.size() <= 12
             && request.resource.data.match is string && request.resource.data.match.size() <= 20));
@@ -124,6 +125,8 @@ service cloud.firestore {
     // Scout for me reports and match game plans (written by the sync), shared with the whole team.
     match /reports/{d} { allow read: if isMember(); }
     match /plans/{d} { allow read: if isMember(); }
+    // The game manual (written by the sync from VEX's PDF).
+    match /manual/{d} { allow read: if isMember(); }
 
     // Pit display settings, shared so a phone can update the pit laptop: where we are now,
     // the pit number, a message, and which sections are hidden ("override" / "pushback").

@@ -93,3 +93,21 @@ console.log("all model tests passed");
   assert.equal(queueState({ matches: ev.matches.slice(0, 5) }, "19109M", early, { matchesAhead: 3, minutes: 10 }), null, "no match of ours");
   console.log("ok  profile percentiles and queue alerts");
 }
+
+// ---------- The game manual: finding the current PDF, splitting rules ----------
+{
+  const { pickManualPdf, parseRules, manualVersion } = await import("./manual.mjs");
+  const base = "https://content.vexrobotics.com/docs/2026-2027/override/files/";
+  const html = `<a href="${base}override-v1.1-obs.pdf">1.1</a> <a href="${base}v5rc-override-1.0-obsolete.pdf">1.0</a> <a href="${base}override-v2.0.pdf">Current</a>`;
+  assert.equal(pickManualPdf(html), `${base}override-v2.0.pdf`, "skips obsolete versions");
+  assert.equal(pickManualPdf("no links"), null);
+  const rules = parseRules(["Intro text\n<G1> Treat everyone with respect. More text, see <G2>.\nsecond line",
+    "<G2> Use common sense. When reading the rules\n<SG1> Starting a Match – Each Robot must start\nin contact with the wall."]);
+  assert.deepEqual(rules.map(r => r.id), ["G1", "G2", "SG1"], "rules start at line starts only");
+  assert.equal(rules[0].title, "Treat everyone with respect.");
+  assert.equal(rules[2].title, "Starting a Match");
+  assert.equal(rules[2].page, 2);
+  assert.match(rules[0].text, /second line/);
+  assert.equal(manualVersion(`${base}override-v2.0.pdf`, []), "2.0");
+  console.log("ok  game manual parsing");
+}

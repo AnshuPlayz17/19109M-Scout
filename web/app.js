@@ -146,6 +146,8 @@ const ICONS = {
   lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
   skills: '<path d="M4 20h4v-6H4zM10 20h4V9h-4zM16 20h4V4h-4z"/>',
   review: '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 12h7M9 16h5"/>',
+  manual: '<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/><path d="M9 8h7M9 11.5h5"/>',
+  copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/>',
   scout: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>',
   chat: '<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9.5h8M8 12.5h5"/>',
   send: '<path d="M5 12h13M12 5l7 7-7 7"/>',
@@ -2710,6 +2712,119 @@ views.controls = () => [pagehead("Controls", "What each controller button does i
   ...CONTROLS.flatMap(([title, rows]) => [section(title), group(...rows.map(([key, what]) => lrow({ info: true, lead: h("span", { class: "keycap" }, key), title: what })))]),
   h("p", { class: "footnote" }, "Matches the robot code on the main branch once the latest robot PR is merged.")];
 
+// ---------------------------------------------------------------- game manual
+// The rules come from VEX's current manual PDF, which the sync reads (sync/manual.mjs). "Ask about
+// a ruling" sends what happened to the sync's AI, which answers only from the manual: the rules
+// that apply (quotes checked against the manual's text), what to say to the head referee, and a
+// question to ask. Past answers stay on this phone.
+let manualQuery = "", manualSection = "All", rulingText = "", rulingJob = null, rulingStep = "";
+let rulings = store.get(`rulings.${G.key}`, []);
+const watchManual = () => watch("manual", doc(db, "manual", G.key), s => { S.manualMeta = s.exists() ? s.data() : null; if (S.manualMeta) loadRules(); });
+async function loadRules() {
+  const meta = S.manualMeta, key = `19109m.manual.${G.key}`, stamp = meta.updatedAt?.toMillis?.() || 0;
+  if (S.rules?.stamp === stamp) return;
+  let cached = null;
+  try { cached = JSON.parse(localStorage.getItem(key)); } catch {}
+  if (cached?.stamp === stamp) { S.rules = cached; refresh(); return; }
+  const parts = await Promise.all(Array.from({ length: meta.chunks }, (_, i) => getDoc(doc(db, "manual", `${G.key}-rules-${i}`)))).catch(() => []);
+  S.rules = { stamp, items: parts.flatMap(p => (p.exists() ? p.data().items : [])) };
+  try { localStorage.setItem(key, JSON.stringify(S.rules)); } catch {}
+  refresh();
+}
+// Rule groups by tag prefix, as the manual is laid out.
+const RULE_GROUPS = [["S", "Safety"], ["G", "General"], ["SG", "Game"], ["SC", "Scoring"], ["R", "Robot"], ["T", "Tournament"], ["RS", "Skills"]];
+const ruleGroup = id => (id.match(/^[A-Z]+/) || [""])[0];
+async function askRuling() {
+  const text = rulingText.trim();
+  if (!text || rulingJob) return;
+  if (!navigator.onLine) { toast("You're offline. Ask again when you're connected.", "bad"); return; }
+  rulingJob = "…"; rulingStep = "Sending…"; render();
+  try {
+    const ref = await addDoc(collection(db, "aiJobs"), { kind: "rules", question: text.slice(0, 2000), by: user.uid, nickname: S.nickname, at: serverTimestamp(), game: G.key, status: "new" });
+    rulingJob = ref.id;
+    const un = onSnapshot(ref, snap => {
+      const j = snap.data(); if (!j) return;
+      if (j.step) rulingStep = j.step;
+      if (j.status === "done" || j.status === "error") {
+        un(); rulingJob = null; rulingStep = "";
+        if (j.status === "done" && j.ruling) { rulings = [{ q: text, r: j.ruling, at: Date.now() }, ...rulings].slice(0, 15); store.set(`rulings.${G.key}`, rulings); rulingText = ""; }
+        else toast(j.error || "Couldn't answer that one.", "bad");
+        deleteDoc(ref).catch(() => {});
+      }
+      refresh();
+    });
+  } catch (err) { rulingJob = null; toast(`Couldn't ask: ${err.code || err.message}`, "bad"); render(); }
+}
+const copyText = (t, what = "Copied") => navigator.clipboard?.writeText(t).then(() => toast(what), () => toast("Couldn't copy on this device.", "bad"));
+function rulingCard({ q, r, at }, i) {
+  const outlookCls = r.outlook === "in our favour" ? "good" : r.outlook === "against us" ? "bad" : "";
+  return h("section", { class: "card ruling" },
+    h("div", { class: "row between" }, h("span", { class: "eyebrow" }, `You asked · ${ago(new Date(at).toISOString())}`),
+      h("button", { type: "button", class: "btn small plain", onclick: () => { rulings.splice(i, 1); store.set(`rulings.${G.key}`, rulings); render(); } }, "Remove")),
+    h("p", { class: "muted small asked" }, q),
+    h("div", { class: "row" }, h("span", { class: `pill outlook ${outlookCls}` }, r.outlook === "in our favour" ? "Likely in our favour" : r.outlook === "against us" ? "Likely against us" : "Unclear")),
+    h("p", {}, r.summary),
+    r.rules?.length ? h("div", { class: "rulequotes" }, r.rules.map(x => h("a", { class: "rulequote", href: x.known ? `#/manual/${encodeURIComponent(x.id)}` : null },
+      h("div", { class: "row between" }, h("b", {}, `<${x.id}>${x.title ? ` ${x.title}` : ""}`), x.page ? h("span", { class: "muted small" }, `p. ${x.page}`) : null),
+      h("blockquote", {}, x.quote, x.verified ? null : h("span", { class: "unverified" }, " (not found word for word in the manual: check it)")),
+      h("span", { class: "muted small" }, x.why)))) : null,
+    h("div", { class: "toref" }, h("div", { class: "row between" }, h("span", { class: "eyebrow" }, "Say to the head referee"),
+      h("button", { type: "button", class: "btn small", onclick: () => copyText(r.sayToRef) }, icon("copy"), "Copy")), h("p", {}, r.sayToRef)),
+    h("div", { class: "toref" }, h("div", { class: "row between" }, h("span", { class: "eyebrow" }, "Ask the head referee"),
+      h("button", { type: "button", class: "btn small", onclick: () => copyText(r.askRef) }, icon("copy"), "Copy")), h("p", {}, r.askRef)),
+    r.qna ? h("div", { class: "toref" }, h("div", { class: "row between" }, h("span", { class: "eyebrow" }, "For the official Q&A"),
+      h("button", { type: "button", class: "btn small", onclick: () => copyText(r.qna) }, icon("copy"), "Copy")), h("p", {}, r.qna)) : null,
+    h("p", { class: "footnote" }, `From manual ${r.version ? `version ${r.version}` : ""}. AI help, not a ruling: the head referee decides. Be calm and polite; only the drive team's student talks to the head referee.`));
+}
+views.manual = id => {
+  watchManual();
+  const meta = S.manualMeta, rules = S.rules?.items || [];
+  if (id) {
+    const r = rules.find(x => x.id === id);
+    if (!r) return [pagehead(`<${id}>`), meta === undefined || !S.rules ? skeleton(200) : notice("That rule isn't in the current manual.", "Not found", "manual")];
+    const refs = [...new Set((r.text.match(/<([A-Z]{1,3}\d{1,2}[a-z]?)>/g) || []).map(t => t.slice(1, -1)).filter(x => x !== r.id && rules.some(y => y.id === x)))];
+    return [pagehead(`<${r.id}> ${r.title}`, `Page ${r.page}${meta?.version ? ` · manual ${meta.version}` : ""}`),
+      card(h("div", { class: "ruletext" }, r.text.replace(/^<[^>]+>\s*/, ""))),
+      refs.length ? section("Mentioned in this rule") : null,
+      refs.length ? group(...refs.map(x => { const y = rules.find(z => z.id === x); return lrow({ href: `#/manual/${encodeURIComponent(x)}`, title: `<${x}> ${y.title}`, sub: `Page ${y.page}` }); })) : null,
+      h("div", { class: "row" },
+        h("button", { type: "button", class: "btn primary", onclick: () => { rulingText = `About <${r.id}>: `; location.hash = "#/manual"; } }, icon("scout"), "Ask about this rule"),
+        h("button", { type: "button", class: "btn", onclick: () => copyText(`<${r.id}> ${r.text.replace(/^<[^>]+>\s*/, "").replace(/\s+/g, " ")}`, "Rule copied") }, icon("copy"), "Copy rule"),
+        meta?.url ? h("a", { class: "btn", href: meta.url, target: "_blank", rel: "noopener" }, "Official PDF", icon("ext")) : null)];
+  }
+  const out = [pagehead("Game manual", meta ? `${G.name}${meta.version ? ` · version ${meta.version}` : ""} · ${meta.rules} rules` : G.name)];
+  if (meta === null) return [...out, notice("The manual loads with the next refresh from VEX (within a day). Until then, open it on VEX's site.", "Not loaded yet", "manual"),
+    group(lrow({ href: G.key === "pushback" ? "https://www.vexrobotics.com/push-back-manual" : "https://www.vexrobotics.com/override-manual", title: "Game manual on vexrobotics.com", external: true }))];
+  // Ask about a ruling
+  const ta = h("textarea", { rows: 4, maxlength: 2000, placeholder: "What happened? e.g. Their robot held ours against the wall for about 8 seconds in the last 20 seconds and the ref didn't call it.",
+    oninput: e => { rulingText = e.target.value; } }, rulingText);
+  out.push(h("form", { class: "card askrule", onsubmit: e => { e.preventDefault(); askRuling(); } },
+    h("div", {}, h("h3", {}, "Ask about a ruling"), h("p", { class: "muted small" }, "Describe what happened. Scout finds the rules that apply, quotes them, and writes what to say to the head referee.")),
+    ta,
+    h("button", { type: "submit", class: "btn primary wide", disabled: !!rulingJob || !aiReady() }, icon("scout"), rulingJob ? rulingStep || "Reading the manual…" : "Find the rules"),
+    !aiReady() && S.ai !== undefined ? h("p", { class: "footnote" }, "Needs AI: an admin adds the ANTHROPIC_API_KEY secret.") : null));
+  out.push(...rulings.map(rulingCard));
+  // Browse and search
+  const groups = RULE_GROUPS.filter(([p]) => rules.some(r => ruleGroup(r.id) === p));
+  const list = h("div", { class: "group-list" }), count = h("p", { class: "footnote", style: "margin-top:0" });
+  const drawList = () => {
+    const q = manualQuery.trim().toLowerCase();
+    let items = rules;
+    if (manualSection !== "All") items = items.filter(r => ruleGroup(r.id) === manualSection);
+    if (q) items = items.filter(r => r.id.toLowerCase() === q.replace(/[<>]/g, "") || `${r.id} ${r.text}`.toLowerCase().includes(q));
+    list.replaceChildren(...items.slice(0, 120).map(r => lrow({ href: `#/manual/${encodeURIComponent(r.id)}`, title: `<${r.id}> ${r.title}`, sub: `Page ${r.page}` })));
+    if (!items.length) list.append(h("p", { class: "empty" }, S.rules ? "No rules match." : "Loading the manual…"));
+    count.textContent = items.length > 120 ? `Showing 120 of ${items.length}. Search to narrow it down.` : "";
+  };
+  drawList();
+  out.push(section("Rules", meta?.url ? h("a", { href: meta.url, target: "_blank", rel: "noopener" }, "Official PDF") : null),
+    searchBox("Search the rules: a word, or a rule like SG4", manualQuery, e => { manualQuery = e.target.value; drawList(); }),
+    h("div", { class: "chips" }, ["All", ...groups.map(([p]) => p)].map(p => h("button", { type: "button", "aria-pressed": String(manualSection === p), onclick: () => { manualSection = p; render(); } },
+      p === "All" ? "All" : `${p} · ${RULE_GROUPS.find(g => g[0] === p)[1]}`))),
+    list, count);
+  return out;
+};
+
 views.more = () => [pagehead("More"),
   group(
     lrow({ href: "#/autos", ic: "autos", title: "Autos", sub: "Our autonomous routes" }),
@@ -2785,15 +2900,15 @@ views.settings = () => {
 // ---------------------------------------------------------------- shell
 
 // Six tabs on phones; the sidebar on wide screens lists everything.
-const NAV = [["home", "Home", ""], ["events", "Events", "events"], ["teams", "Teams", "teams"], ["scout", "Scout", "scout"], ["fieldmap", "Map", "fieldmap"], ["more", "More", "more"]];
-const NAV_WIDE = [["home", "Home", ""], ["events", "Events", "events"], ["teams", "Teams", "teams"], ["scout", "Scout for me", "scout"], ["autos", "Autos", "autos"], ["fieldmap", "Field map", "fieldmap"], ["skills", "Skills planner", "skills"], ["review", "Season review", "review"], ["controls", "Controls", "controls"], ["ports", "Ports", "ports"], ["checklist", "Checklist", "checklist"],
+const NAV = [["home", "Home", ""], ["events", "Events", "events"], ["teams", "Teams", "teams"], ["scout", "Scout", "scout"], ["manual", "Manual", "manual"], ["fieldmap", "Map", "fieldmap"], ["more", "More", "more"]];
+const NAV_WIDE = [["home", "Home", ""], ["events", "Events", "events"], ["teams", "Teams", "teams"], ["scout", "Scout for me", "scout"], ["manual", "Game manual", "manual"], ["autos", "Autos", "autos"], ["fieldmap", "Field map", "fieldmap"], ["skills", "Skills planner", "skills"], ["review", "Season review", "review"], ["controls", "Controls", "controls"], ["ports", "Ports", "ports"], ["checklist", "Checklist", "checklist"],
   ["scorer", "Scorer", "scorer"], ["predict", "Predictor", "predict"], ["board", "Whiteboard", "board"], ["pit", "Pit display", "pit"], ["settings", "Settings", "settings"]];
 const TAB_OF = { ports: "more", controls: "more", skills: "more", review: "more", event: "events", match: "events", select: "events", assign: "events", team: "teams", autos: "more", checklist: "more", scorer: "more", predict: "more", settings: "more", board: "more", pit: "more" };
 const BACK = { ports: ["More", "#/more"], controls: ["More", "#/more"], skills: ["More", "#/more"], review: ["Back"], event: ["Events", "#/events"], match: ["Back"], select: ["Back"], assign: ["Back"], team: ["Back"], checklist: ["More", "#/more"], scorer: ["More", "#/more"], predict: ["More", "#/more"], settings: ["More", "#/more"] };
 const wide = matchMedia("(min-width: 900px)");
 let lastRoute = "", titleObs = null;
 // How deep each page sits, so moving deeper slides in from the right and Back slides the other way.
-const DEPTH = { ports: 1, controls: 1, home: 0, events: 0, teams: 0, autos: 0, scout: 0, fieldmap: 0, more: 0, event: 1, checklist: 1, scorer: 1, predict: 1, settings: 1, board: 1, pit: 1, match: 2, team: 2, select: 2, assign: 2, skills: 1, review: 1 };
+const DEPTH = { ports: 1, controls: 1, home: 0, events: 0, teams: 0, autos: 0, scout: 0, manual: 0, fieldmap: 0, more: 0, event: 1, checklist: 1, scorer: 1, predict: 1, settings: 1, board: 1, pit: 1, match: 2, team: 2, select: 2, assign: 2, skills: 1, review: 1 };
 const calm = matchMedia("(prefers-reduced-motion: reduce)");
 let lastName = "", lastDepth = 0, drawn = false, moving = null;
 /** Runs `change` as an animated transition (View Transitions where the browser has them). */
@@ -2815,7 +2930,7 @@ function render() {
   const route = parts.join("/");
   const fresh = route !== lastRoute;
   // Only real navigation animates; live data redraws (every few seconds at events) stay still.
-  const depth = (name === "autos" || name === "scout") && parts[1] ? 1 : DEPTH[name] ?? 0;
+  const depth = (name === "autos" || name === "scout" || name === "manual") && parts[1] ? 1 : DEPTH[name] ?? 0;
   if (!fresh || !drawn) { drawn = true; lastRoute = route; lastName = name; lastDepth = depth; draw(parts, name, fresh); return; }
   const from = lastDepth, to = depth;
   const kind = name === lastName && to === from ? "swap" : to > from ? "forward" : to < from ? "back" : "tab";
@@ -2839,8 +2954,8 @@ function draw(parts, name, fresh) {
   document.body.classList.add("has-nav");
   const isWide = wide.matches;
   const tab = TAB_OF[name] || name;
-  const sub = name === "autos" || name === "scout" ? !!parts[1] : isWide ? ["event", "match", "team", "select", "assign"].includes(name) : !!BACK[name];
-  const [backLabel, backHref] = name === "autos" ? ["Autos", "#/autos"] : name === "scout" ? ["Scout", "#/scout"] : BACK[name] || ["Back"];
+  const sub = name === "autos" || name === "scout" || name === "manual" ? !!parts[1] : isWide ? ["event", "match", "team", "select", "assign"].includes(name) : !!BACK[name];
+  const [backLabel, backHref] = name === "autos" ? ["Autos", "#/autos"] : name === "scout" ? ["Scout", "#/scout"] : name === "manual" ? ["Manual", "#/manual"] : BACK[name] || ["Back"];
   const content = views[name](...parts.slice(1));
   const head = h("header", { class: "top" },
     h("div", { class: "left" }, sub ? h("button", { class: "back", onclick: () => { if (backHref) location.hash = backHref; else if (history.length > 1) history.back(); else location.hash = "#/"; } }, icon("back"), h("span", {}, backLabel)) : null),
