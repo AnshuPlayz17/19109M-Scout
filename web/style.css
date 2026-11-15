@@ -1,5 +1,5 @@
-/* 19109M Scout. One neutral palette, team red as the only accent, red and blue only for
-   alliances. Barlow for text, Barlow Semi Condensed for numbers, scores and team numbers.
+/* 19109M Scout. Cream and ink with deep teal as the accent and orange as the highlight (opposite
+   on the colour wheel); red and blue only for alliances. Barlow for text, Barlow Semi Condensed for numbers, scores and team numbers.
    Fonts are stored with the site (fonts/, SIL Open Font License) so they work offline. */
 @font-face { font-family: "Barlow"; src: url("fonts/barlow-400.woff2") format("woff2"); font-weight: 400; font-display: swap; }
 @font-face { font-family: "Barlow"; src: url("fonts/barlow-500.woff2") format("woff2"); font-weight: 500; font-display: swap; }
@@ -9,36 +9,39 @@
 
 /* ---------- theme: System follows the device; Settings can pin Light or Dark (data-theme on <html>) */
 :root {
-  --bg: #f2f3f5; --surface: #ffffff; --surface-2: #f0f1f3; --surface-3: #e3e5e9;
-  --fg: #14161a; --muted: #5f6670; --faint: #949aa3; --line: rgba(20, 22, 26, 0.09); --sep: rgba(20, 22, 26, 0.08);
-  --accent: #c8282d; --accent-fg: #ffffff; --accent-text: #b0232a; --accent-soft: rgba(200, 40, 45, 0.08);
+  --bg: #f6f2ea; --surface: #fffdf9; --surface-2: #f0ebe1; --surface-3: #e4ddd0;
+  --fg: #172322; --muted: #5d6662; --faint: #969c97; --line: rgba(23, 35, 34, 0.1); --sep: rgba(23, 35, 34, 0.08);
+  --accent: #0f5f5b; --accent-fg: #ffffff; --accent-text: #0c514e; --accent-soft: rgba(15, 95, 91, 0.08);
+  --hi: #e2702a; --hi-text: #b8551a; --hi-soft: rgba(226, 112, 42, 0.12);
   --red: #d23a3f; --red-text: #b42a30; --red-soft: rgba(210, 58, 63, 0.09);
   --blue: #2f6fdb; --blue-text: #2257b8; --blue-soft: rgba(47, 111, 219, 0.09);
-  --good: #1d8748; --bad: #c4362e; --warn: #9a5a00; --yellow: #e0a800;
-  --bar-bg: rgba(242, 243, 245, 0.86);
-  --shadow: 0 1px 2px rgba(20, 22, 26, 0.04);
+  --good: #1d7a45; --bad: #c4362e; --warn: #a65b00; --yellow: #e0a800;
+  --bar-bg: rgba(246, 242, 234, 0.88);
+  --shadow: 0 1px 2px rgba(23, 35, 34, 0.05);
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0c0d0f; --surface: #16181b; --surface-2: #1f2125; --surface-3: #2b2e33;
-    --fg: #eceef1; --muted: #9ba2ac; --faint: #6c727b; --line: rgba(255, 255, 255, 0.07); --sep: rgba(255, 255, 255, 0.07);
-    --accent: #e0464b; --accent-text: #ff7c80; --accent-soft: rgba(224, 70, 75, 0.14);
+    --bg: #0d1514; --surface: #15201f; --surface-2: #1c2928; --surface-3: #283735;
+    --fg: #ece8df; --muted: #9ca7a2; --faint: #6d7874; --line: rgba(236, 232, 223, 0.08); --sep: rgba(236, 232, 223, 0.07);
+    --accent: #2f9e94; --accent-fg: #ffffff; --accent-text: #6dd0c4; --accent-soft: rgba(47, 158, 148, 0.16);
+    --hi: #f0883e; --hi-text: #f6a165; --hi-soft: rgba(240, 136, 62, 0.16);
     --red: #e0464b; --red-text: #ff8a8e; --red-soft: rgba(224, 70, 75, 0.14);
     --blue: #4a8cff; --blue-text: #8fb8ff; --blue-soft: rgba(74, 140, 255, 0.14);
     --good: #3ccf73; --bad: #ff6b61; --warn: #ffb547; --yellow: #ffcc33;
-    --bar-bg: rgba(12, 13, 15, 0.84); --shadow: none;
+    --bar-bg: rgba(13, 21, 20, 0.86); --shadow: none;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #0c0d0f; --surface: #16181b; --surface-2: #1f2125; --surface-3: #2b2e33;
-  --fg: #eceef1; --muted: #9ba2ac; --faint: #6c727b; --line: rgba(255, 255, 255, 0.07); --sep: rgba(255, 255, 255, 0.07);
-  --accent: #e0464b; --accent-text: #ff7c80; --accent-soft: rgba(224, 70, 75, 0.14);
+  --bg: #0d1514; --surface: #15201f; --surface-2: #1c2928; --surface-3: #283735;
+  --fg: #ece8df; --muted: #9ca7a2; --faint: #6d7874; --line: rgba(236, 232, 223, 0.08); --sep: rgba(236, 232, 223, 0.07);
+  --accent: #2f9e94; --accent-fg: #ffffff; --accent-text: #6dd0c4; --accent-soft: rgba(47, 158, 148, 0.16);
+  --hi: #f0883e; --hi-text: #f6a165; --hi-soft: rgba(240, 136, 62, 0.16);
   --red: #e0464b; --red-text: #ff8a8e; --red-soft: rgba(224, 70, 75, 0.14);
   --blue: #4a8cff; --blue-text: #8fb8ff; --blue-soft: rgba(74, 140, 255, 0.14);
   --good: #3ccf73; --bad: #ff6b61; --warn: #ffb547; --yellow: #ffcc33;
-  --bar-bg: rgba(12, 13, 15, 0.84); --shadow: none;
+  --bar-bg: rgba(13, 21, 20, 0.86); --shadow: none;
   color-scheme: dark;
 }
 :root {
@@ -177,8 +180,8 @@ header.top .seg { padding: 2px; } header.top .seg > * { min-height: 28px; paddin
 .chips > * svg { width: 16px; height: 16px; }
 .chips > [aria-pressed="true"] { background: var(--fg); border-color: var(--fg); color: var(--bg); }
 .pill { display: inline-flex; align-items: center; gap: 5px; font-size: 0.75rem; font-weight: 600; padding: 2px 8px; border-radius: 6px; background: var(--surface-2); white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--muted); }
-.pill.live { background: var(--accent-soft); color: var(--accent-text); }
-.pill.live::before { content: ""; width: 6px; height: 6px; border-radius: 3px; background: var(--accent); animation: pulse 1.6s ease-in-out infinite; }
+.pill.live { background: var(--hi-soft); color: var(--hi-text); }
+.pill.live::before { content: ""; width: 6px; height: 6px; border-radius: 3px; background: var(--hi); animation: pulse 1.6s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: 0.25; } }
 .pill.win { color: var(--good); } .pill.loss { color: var(--bad); }
 .pill.red { color: var(--red-text); background: var(--red-soft); } .pill.blue { color: var(--blue-text); background: var(--blue-soft); }
@@ -203,7 +206,7 @@ header.top .seg { padding: 2px; } header.top .seg > * { min-height: 28px; paddin
 .glance > * + * { border-left: 1px solid var(--sep); }
 .glance b, .kv b { font: 700 1.75rem/1 var(--font-num); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .glance span, .kv span { font-size: 0.75rem; color: var(--muted); }
-.glance .accent b { color: var(--accent-text); }
+.glance .accent b { color: var(--hi-text); }
 .kv { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .kv > div { display: flex; flex-direction: column; gap: 3px; }
 .chance { display: inline-flex; flex-direction: column; align-items: flex-end; line-height: 1; flex: none; }
@@ -225,8 +228,8 @@ header.top .seg { padding: 2px; } header.top .seg > * { min-height: 28px; paddin
 .evcard:not(:has(.glance)) { padding-bottom: 14px; }
 .evcard .evtop { display: flex; justify-content: space-between; align-items: center; }
 .evcard .status { display: flex; align-items: center; gap: 6px; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
-.evcard.live .status { color: var(--accent-text); }
-.evcard.live .status::before { content: ""; width: 7px; height: 7px; border-radius: 4px; background: var(--accent); animation: pulse 1.6s ease-in-out infinite; }
+.evcard.live .status { color: var(--hi-text); }
+.evcard.live .status::before { content: ""; width: 7px; height: 7px; border-radius: 4px; background: var(--hi); animation: pulse 1.6s ease-in-out infinite; }
 .evcard h2 { font-size: 1.25rem; line-height: 1.25; }
 .evcard > p { color: var(--muted); font-size: 0.875rem; }
 .evcard .glance { margin: 10px -16px 0; border: 0; border-top: 1px solid var(--sep); border-radius: 0; box-shadow: none; background: none; }
@@ -482,8 +485,8 @@ main.page-pit { min-height: 100dvh; padding: clamp(14px, min(2.5vw, 3.5vh), 32px
 .pit-status span { font-size: 0.8em; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
 .pit-status b { font: 700 1.7em/1.1 var(--font-num); }
 .pit-status.live span { color: var(--accent-text); }
-.pit-status.live span::before { content: ""; width: 9px; height: 9px; border-radius: 5px; background: var(--accent); animation: pulse 1.6s ease-in-out infinite; }
-.pit-status.urgent { background: var(--accent); border-color: var(--accent); color: #fff; animation: urge 1.4s ease-in-out infinite; }
+.pit-status.live span::before { content: ""; width: 9px; height: 9px; border-radius: 5px; background: var(--hi); animation: pulse 1.6s ease-in-out infinite; }
+.pit-status.urgent { background: var(--hi); border-color: var(--hi); color: #fff; animation: urge 1.4s ease-in-out infinite; }
 .pit-status.urgent span { color: rgba(255, 255, 255, 0.85); } .pit-status.urgent span::before { background: #fff; }
 @keyframes urge { 50% { box-shadow: 0 0 0 10px var(--accent-soft); } }
 .pit-clock { text-align: right; display: flex; flex-direction: column; }
@@ -869,9 +872,9 @@ header.top .right { display: flex; align-items: center; gap: 8px; justify-conten
 
 /* ---------- pit display: always dark, readable across the pit; rank, record and OPR only */
 .page-pit {
-  --bg: #111113; --surface: #1c1c1f; --surface-2: #232327; --surface-3: #2e2e33;
-  --fg: #f4f4f5; --muted: #a1a1aa; --faint: #71717a; --line: rgba(255, 255, 255, 0.07); --sep: #2a2a2e;
-  --accent: #e0514b; --accent-text: #f87171; --red: #e0514b; --red-text: #f87171; --blue: #4f8ef7; --blue-text: #8db4ff; --good: #4ade80; --bad: #f87171;
+  --bg: #0d1514; --surface: #15201f; --surface-2: #1c2928; --surface-3: #283735;
+  --fg: #ece8df; --muted: #a1a1aa; --faint: #71717a; --line: rgba(255, 255, 255, 0.07); --sep: #2a2a2e;
+  --accent: #2f9e94; --accent-text: #6dd0c4; --hi: #f0883e; --hi-text: #f6a165; --red: #e0514b; --red-text: #f87171; --blue: #4f8ef7; --blue-text: #8db4ff; --good: #4ade80; --bad: #f87171;
   background: var(--bg); color: var(--fg); color-scheme: dark; }
 .page-pit .pit-status, .page-pit .pit-card { border: 0; }
 .page-pit .pit-stats { grid-template-columns: repeat(3, 1fr); border: 0; }
