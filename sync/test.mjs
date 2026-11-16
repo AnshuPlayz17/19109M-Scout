@@ -115,5 +115,14 @@ console.log("all model tests passed");
   assert.equal(rules[2].page, 2);
   assert.match(rules[0].text, /second line/);
   assert.equal(manualVersion(`${base}override-v2.0.pdf`, []), "2.0");
+  const { ruleBlocks, shortTitle } = await import("../web/manual-parse.js");
+  const blocks = ruleBlocks(["<SC6> An Autonomous Win Point is awarded to any Alliance that ends the Autonomous Period with all of the",
+    "following tasks completed:", "1. At least six (6) Pin Halves Scored for your", "Alliance.", "2. Neither Robot is touching.",
+    "VEX V5 Robotics Competition Override - Game Manual", "33Version 2.1 - Copyright 2026, Innovation First, Inc./ VEX Robotics, Inc.",
+    "Caution", "Criteria may change for", "the World Championship.", "This rule is applied differently for VEX U. See Rule VUG6.", "Specific Game Rules"].join("\n"));
+  assert.deepEqual(blocks.map(b => b.type), ["p", "item", "item", "callout", "aside"], "paragraph, list, call-out, note; no footer or heading");
+  assert.equal(blocks[1].text, "At least six (6) Pin Halves Scored for your Alliance.", "wrapped lines joined");
+  assert.equal(blocks[3].body[0].text, "Criteria may change for the World Championship.");
+  assert.equal(shortTitle("An Autonomous Win Point is awarded to any Alliance that ends the Autonomous Period with all of"), "Autonomous Win Point");
   console.log("ok  game manual parsing");
 }

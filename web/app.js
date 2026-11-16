@@ -2,6 +2,7 @@
 import { db, h, requireMember, signOut, auth, splash, hideSplash, rememberMember, secret, askAdmin, verdict } from "./fb.js";
 import { createBoard } from "./board.js";
 import { AXES, profile } from "./profile.js";
+import { ruleBlocks, shortTitle } from "./manual-parse.js";
 import {
   doc, getDoc, getDocs, onSnapshot, collection, query, where, addDoc, setDoc, updateDoc, deleteDoc, serverTimestamp, orderBy, limit, arrayUnion, arrayRemove, writeBatch,
 } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
@@ -2756,6 +2757,39 @@ async function loadRules() {
 // Rule groups by tag prefix, as the manual is laid out.
 const RULE_GROUPS = [["S", "Safety"], ["G", "General"], ["SG", "Game"], ["SC", "Scoring"], ["R", "Robot"], ["T", "Tournament"], ["RS", "Skills"]];
 const ruleGroup = id => (id.match(/^[A-Z]+/) || [""])[0];
+const groupName = id => (RULE_GROUPS.find(g => g[0] === ruleGroup(id)) || [, "Other"])[1];
+// Rule text with <SG4>-style mentions turned into links to that rule.
+function ruleInline(text, rules) {
+  const out = [];
+  let last = 0;
+  for (const m of text.matchAll(/<([A-Z]{1,3}\d{1,2}[a-z]?)>/g)) {
+    out.push(text.slice(last, m.index));
+    out.push(rules.some(r => r.id === m[1]) ? h("a", { class: "rlink", href: `#/manual/${encodeURIComponent(m[1])}` }, m[1]) : h("b", {}, m[1]));
+    last = m.index + m[0].length;
+  }
+  out.push(text.slice(last));
+  return out;
+}
+// Paragraphs, numbered lists and call-outs, from the PDF's text.
+function ruleBody(text, rules) {
+  const draw = blocks => {
+    const out = [];
+    let list = null;
+    for (const b of blocks) {
+      if (b.type === "item") {
+        if (!list) { list = h("ol", { class: "rl" }); out.push(list); }
+        list.append(h("li", {}, b.n != null ? h("span", { class: "n" }, typeof b.n === "number" ? b.n : `${b.n}.`) : h("span", { class: "n" }, "•"), h("span", {}, ruleInline(b.text, rules))));
+        continue;
+      }
+      list = null;
+      if (b.type === "callout") out.push(h("aside", { class: `rcall ${b.label.toLowerCase()}` }, h("b", {}, b.label), ...draw(b.body)));
+      else if (b.type === "aside") out.push(h("p", { class: "rnote" }, ruleInline(b.text, rules)));
+      else out.push(h("p", {}, ruleInline(b.text, rules)));
+    }
+    return out;
+  };
+  return draw(ruleBlocks(text));
+}
 async function askRuling() {
   const text = rulingText.trim();
   if (!text || rulingJob) return;
@@ -2850,12 +2884,20 @@ views.manual = id => {
     const r = rules.find(x => x.id === id);
     if (!r) return [pagehead(id), meta === undefined || !S.rules ? skeleton(200) : notice("That rule isn't in the loaded manual.", "Not found", "manual")];
     const refs = [...new Set((r.text.match(/<([A-Z]{1,3}\d{1,2}[a-z]?)>/g) || []).map(t => t.slice(1, -1)).filter(x => x !== r.id && rules.some(y => y.id === x)))];
-    return [h("header", { class: "pagehead rulehead" }, h("span", { class: "rulechip big" }, r.id), h("h1", {}, r.title), h("p", {}, `Page ${r.page}${meta?.version ? ` · version ${meta.version}` : ""}`)),
-      h("article", { class: "card ruletext" }, r.text.replace(/^<[^>]+>\s*/, "")),
-      refs.length ? h("div", { class: "refs" }, h("span", { class: "muted small" }, "Mentions"), refs.map(x => ruleChip(x))) : null,
+    const i = rules.indexOf(r), prev = rules[i - 1], next = rules[i + 1];
+    const step = (x, dir) => x ? h("a", { class: `rstep r${dir}`, href: `#/manual/${encodeURIComponent(x.id)}` }, h("span", { class: "muted small" }, dir === "prev" ? "Previous" : "Next"), h("b", {}, x.id, " ", h("span", {}, shortTitle(x.title)))) : h("span");
+    return [h("a", { class: "backlink", href: "#/manual" }, icon("chev", "ic flip"), "All rules"),
+      h("header", { class: "pagehead rulehead" },
+        h("div", { class: "rulemeta" }, h("span", { class: "rulechip big" }, r.id), h("span", { class: "muted small" }, `${groupName(r.id)} rules · page ${r.page}${meta?.version ? ` · v${meta.version}` : ""}`)),
+        h("h1", {}, shortTitle(r.title))),
+      // When the title is a short label ("Starting a Match."), don't say it twice.
+      h("article", { class: "card ruletext" }, ruleBody(r.title.length <= 48 && /[.:]$/.test(r.title) && r.text.replace(/^<[^>]+>\s*/, "").startsWith(r.title)
+        ? r.text.replace(/^(<[^>]+>\s*)/, "").slice(r.title.length).trim() || r.text : r.text, rules)),
+      refs.length ? h("div", { class: "refs" }, h("span", { class: "muted small" }, "See also"), refs.map(x => ruleChip(x))) : null,
       h("div", { class: "row" },
         h("button", { type: "button", class: "btn primary", onclick: () => { rulingText = `About ${r.id}: `; location.hash = "#/manual"; } }, icon("scout"), "Ask about this rule"),
-        h("button", { type: "button", class: "btn", onclick: () => copyText(`<${r.id}> ${r.text.replace(/^<[^>]+>\s*/, "").replace(/\s+/g, " ")}`, "Rule copied") }, icon("copy"), "Copy"))];
+        h("button", { type: "button", class: "btn", onclick: () => copyText(`<${r.id}> ${ruleBlocks(r.text).map(b => b.type === "callout" ? `${b.label}: ${b.body.map(x => x.text).join(" ")}` : b.type === "item" ? `${b.n ?? "-"}. ${b.text}` : b.text).join("\n")}`, "Rule copied") }, icon("copy"), "Copy")),
+      h("nav", { class: "rsteps" }, step(prev, "prev"), step(next, "next"))];
   }
   const out = [pagehead("Game manual", meta ? [G.name, meta.version && `version ${meta.version}`, `${meta.rules} rules`].filter(Boolean).join(" · ") : G.name)];
   if (meta === null) return [...out, notice(S.admin ? "Download the game manual PDF from VEX, then load it here. The app reads it on this device and saves the rules for the whole team."
@@ -2885,9 +2927,14 @@ views.manual = id => {
     let items = rules;
     if (manualSection !== "All") items = items.filter(r => ruleGroup(r.id) === manualSection);
     if (q) items = items.filter(r => r.id.toLowerCase() === q || `${r.id} ${r.text}`.toLowerCase().includes(q));
-    list.replaceChildren(...items.slice(0, 150).map(r => h("a", { class: "rulerow", href: `#/manual/${encodeURIComponent(r.id)}` }, h("span", { class: "rulechip" }, r.id), h("span", { class: "t" }, r.title), h("span", { class: "pg" }, r.page))));
+    const row = r => h("a", { class: "rulerow", href: `#/manual/${encodeURIComponent(r.id)}` }, h("span", { class: "rulechip" }, r.id), h("span", { class: "t" }, shortTitle(r.title)), h("span", { class: "pg" }, `p${r.page}`));
+    const shown = items.slice(0, q ? 150 : 1000);
+    // Browsing everything: one block per section, in manual order, with a count.
+    if (!q && manualSection === "All") list.replaceChildren(...groups.flatMap(([p, name]) => { const rs = shown.filter(r => ruleGroup(r.id) === p);
+      return rs.length ? [h("div", { class: "rgroup" }, h("b", {}, name), h("span", {}, `${rs.length} rule${rs.length === 1 ? "" : "s"}`)), ...rs.map(row)] : []; }));
+    else list.replaceChildren(...shown.map(row));
     if (!items.length) list.append(h("p", { class: "empty" }, S.rules ? "No rules match." : "Loading the manual…"));
-    count.textContent = items.length > 150 ? `Showing 150 of ${items.length}. Search to narrow it down.` : "";
+    count.textContent = items.length > shown.length ? `Showing ${shown.length} of ${items.length}. Search to narrow it down.` : "";
   };
   drawList();
   out.push(section("Rules", meta?.url ? h("a", { href: meta.url, target: "_blank", rel: "noopener" }, "PDF") : null),

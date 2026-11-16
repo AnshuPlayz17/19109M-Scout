@@ -967,7 +967,31 @@ a.rulechip:hover { border-color: var(--accent); color: var(--accent-text); }
 .rulerow .rulechip { justify-self: start; }
 .rulerow .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.9375rem; }
 .rulehead h1 { font-size: 1.5rem; }
-.ruletext { white-space: pre-wrap; line-height: 1.6; font-size: 1rem; }
+.ruletext { line-height: 1.6; font-size: 1rem; padding: 18px 20px; display: grid; gap: 12px; }
+.ruletext p { margin: 0; }
+.ruletext .rlink { color: var(--accent-text); font-weight: 600; text-decoration: none; border-bottom: 1px solid var(--accent-soft); }
+.ruletext ol.rl { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.ruletext ol.rl li { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 8px; align-items: baseline; }
+.ruletext ol.rl .n { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--surface-2); color: var(--muted); font-size: 0.75rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.ruletext .rcall { background: var(--accent-soft); border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0; padding: 10px 14px; display: grid; gap: 6px; }
+.ruletext .rcall > b { font-size: 0.75rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent-text); }
+.ruletext .rcall.note, .ruletext .rcall.tip, .ruletext .rcall.example, .ruletext .rcall.examples, .ruletext .rcall.clarification { background: var(--surface-2); border-left-color: var(--faint); }
+.ruletext .rcall.note > b, .ruletext .rcall.tip > b, .ruletext .rcall.example > b, .ruletext .rcall.examples > b, .ruletext .rcall.clarification > b { color: var(--muted); }
+.ruletext .rnote { color: var(--muted); font-size: 0.8125rem; border-top: 1px solid var(--sep); padding-top: 8px; }
+.ruletext .rnote + .rnote { border-top: 0; padding-top: 0; margin-top: -6px; }
+.rulemeta { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.rulehead h1 { line-height: 1.2; }
+.backlink { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); text-decoration: none; font-size: 0.875rem; margin-bottom: 4px; }
+.backlink .flip { transform: rotate(180deg); }
+.rsteps { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
+.rstep { display: grid; gap: 2px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; text-decoration: none; color: var(--fg); min-width: 0; }
+.rstep.rnext { text-align: right; }
+.rstep b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.875rem; }
+.rstep b span { font-weight: 400; color: var(--muted); }
+.rgroup { display: flex; justify-content: space-between; align-items: baseline; padding: 14px 14px 6px; background: var(--surface-2); position: sticky; top: 0; }
+.rgroup b { font-size: 0.75rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.rgroup span { font-size: 0.75rem; color: var(--faint); }
+.rulelist .rgroup + .rulerow { border-top: 0; }
 .refs { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .adminrow { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 4px; }
 .askrow .btn { white-space: nowrap; flex: none; }
