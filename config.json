@@ -22,5 +22,6 @@
   "queueMatchesAhead": 2,
   "queueMinutes": 5,
   "aiMonthlyUsd": 75,
-  "aiSeasonNotesPerRun": 300
+  "aiSeasonNotesPerRun": 300,
+  "regionEventsMinutes": 30
 }

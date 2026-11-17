@@ -689,10 +689,39 @@ async function full() {
     const upcoming = now - ms(e.end) < config.quickDaysAfterEnd * DAY;
     aiBudget -= await writeNotes(event, season, { useAI: upcoming, aiBudget });
   }
+  // Every other event in our region, so any of them opens straight away in the app.
+  try { await regionEvents(ctx, seasonEvents); } catch (err) { console.log(`Region events: ${err.message}`); }
   // Then the rest of the region, with whatever is left of tonight's notes budget.
   try { await seasonNotes(regional, new Set(ourEventTeams.keys())); } catch (err) { console.log(`Season notes: ${err.message}`); }
   await handleRequests(ctx);
   await writeStatus(ctx, { lastFull: FieldValue.serverTimestamp(), lastQuick: FieldValue.serverTimestamp() });
+}
+
+/**
+ * Loads every season event in our region (config.region), not only ours. Finished events are read
+ * once after they end; upcoming ones are refreshed weekly (team lists change), recent and running
+ * ones every night. Events on now or in the next two days are also watched, so the fast loop keeps
+ * them current during the day. Stops after config.regionEventsMinutes; the rest follow tomorrow.
+ */
+async function regionEvents(ctx, seasonEvents) {
+  const list = seasonEvents.filter(e => e.region === config.region && !ctx.events.some(x => x.id === e.id));
+  const deadline = Date.now() + config.regionEventsMinutes * 60e3;
+  let loaded = 0, current = 0, left = 0;
+  for (const part of chunk(list, 100)) {
+    const docs = await db.getAll(...part.map(e => db.doc(`events/${e.id}`)), { fieldMask: ["updatedAt"] });
+    for (const [i, e] of part.entries()) {
+      const at = docs[i].exists ? docs[i].get("updatedAt")?.toMillis?.() || 0 : 0;
+      const start = ms(e.start), end = ms(e.end || e.start);
+      const final = at && at > end + config.quickDaysAfterEnd * DAY;
+      const fresh = at && start - Date.now() > config.quickDaysAhead * DAY && Date.now() - at < 7 * DAY;
+      if (final || fresh) { current++; continue; }
+      if (Date.now() > deadline) { left++; continue; }
+      try { await syncEvent(e, { ours: false, ourNumber: ctx.team.number }); loaded++; }
+      catch (err) { console.log(`  region event ${e.sku}: ${err.message}`); if (/429|rate/i.test(err.message)) break; continue; }
+      if (start - Date.now() < 2 * DAY && Date.now() - end < config.quickDaysAfterEnd * DAY) await db.doc(`watch/${e.id}`).set({ end: e.end || null });
+    }
+  }
+  console.log(`Region events (${config.region}): ${loaded} loaded, ${current} already up to date${left ? `, ${left} left for tomorrow` : ""}`);
 }
 
 // Our autos live in the private robot repo, which runs this with AUTOS_FILE pointing at them.

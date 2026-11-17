@@ -518,11 +518,13 @@ views.event = (id, tab) => {
   if (ev === null) {
     loadIndex("events");
     const e = S.index.events?.find(x => String(x.id) === String(id));
+    // Not loaded yet: ask the sync for it right away (once), no button needed.
+    if (!S.requested.has(`event:${id}`)) request("event", id);
     const asked = S.requested.has(`event:${id}`);
     return [pagehead(e?.name || `Event ${id}`, e ? `${fmtDates(e)} · ${where_(e)}` : ""),
       e ? h("div", { class: "row" }, trackBtn(e), h("span", { class: "muted small" }, "Tracking loads it and keeps it live for everyone.")) : null,
       h("div", { class: "notice" }, icon("download"), h("b", {}, "Not loaded yet"),
-        h("span", {}, "It shows up after the next refresh, within the hour (within a minute while one of our events is live). It stays up to date while the event runs."),
+        h("span", {}, "Loading it now: it usually shows up within a minute. It stays up to date while the event runs."),
         h("button", { class: "btn primary", disabled: asked, onclick: () => request("event", id) }, asked ? "Requested" : "Load this event")),
       e ? group(lrow({ href: reEvent(e.sku), title: "Open on VEX Events", external: true })) : null];
   }
