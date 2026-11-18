@@ -8,10 +8,10 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "quick or full"
+        description: "quick, full, or events (load every event of the season)"
         default: full
         type: choice
-        options: [quick, full]
+        options: [quick, full, events]
       game:
         description: "override (this season) or pushback (last season)"
         default: override

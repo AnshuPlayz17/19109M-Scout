@@ -3,6 +3,7 @@
 //
 //   SYNC_MODE=quick  our ongoing/upcoming events + team/event requests from the app
 //   SYNC_MODE=full   everything: all our season events, team stats, season indexes, notes
+//   SYNC_MODE=events load every event of the season (catch-up), then hand over to the live loop
 //   SYNC_MODE=autos  copy AUTOS_FILE (our autos, from the private robot repo) into the app
 //
 // Env: ROBOTEVENTS_TOKEN, FIREBASE_SERVICE_ACCOUNT (JSON key), TEAM_JOIN_CODE,
@@ -55,8 +56,8 @@ let requests = 0;
 // ~100 requests/minute limit, and a rate-limit pause holds all of them.
 // The gap between requests adapts: VEX Events' real limit is lower than it looks (a steady
 // ~90 a minute gets "429 Too Many Requests" within minutes). Each 429 doubles the gap (up to 10 s)
-// and pauses a minute; each success shaves 2 ms back off, so after a quiet ~10 minutes it's back
-// to the fastest setting. Rounds of the fast loop slow down with it automatically.
+// and pauses a minute; each success takes 2% off, so after ~150 good requests it's back to the
+// fastest setting. Rounds of the fast loop slow down with it automatically.
 const FASTEST = 650;
 let nextSlot = 0, gap = FASTEST;
 async function slot() {
@@ -74,7 +75,7 @@ async function get(path, params = {}) {
     await slot();
     requests++;
     const res = await fetch(url, { headers: { Authorization: `Bearer ${process.env.ROBOTEVENTS_TOKEN}`, Accept: "application/json" } });
-    if (res.ok) { gap = Math.max(FASTEST, gap - 2); return res.json(); }
+    if (res.ok) { gap = Math.max(FASTEST, gap * 0.98); return res.json(); }
     if ((res.status === 403 || res.status === 429 || res.status >= 500) && attempt < 4) {
       if (res.status === 429) gap = Math.min(10e3, gap * 2);
       console.log(`  ${res.status} on ${url.pathname}, waiting a minute${res.status === 429 ? `; then one request every ${(gap / 1000).toFixed(1)} s` : ""}`);
@@ -689,8 +690,8 @@ async function full() {
     const upcoming = now - ms(e.end) < config.quickDaysAfterEnd * DAY;
     aiBudget -= await writeNotes(event, season, { useAI: upcoming, aiBudget });
   }
-  // Every other event in our region, so any of them opens straight away in the app.
-  try { await regionEvents(ctx, seasonEvents); } catch (err) { console.log(`Region events: ${err.message}`); }
+  // Every other event of the season (our region first), so any of them opens straight away in the app.
+  try { await seasonEventsLoad(ctx, seasonEvents, config.regionEventsMinutes + config.allEventsMinutes); } catch (err) { console.log(`Season events: ${err.message}`); }
   // Then the rest of the region, with whatever is left of tonight's notes budget.
   try { await seasonNotes(regional, new Set(ourEventTeams.keys())); } catch (err) { console.log(`Season notes: ${err.message}`); }
   await handleRequests(ctx);
@@ -698,15 +699,18 @@ async function full() {
 }
 
 /**
- * Loads every season event in our region (config.region), not only ours. Finished events are read
- * once after they end; upcoming ones are refreshed weekly (team lists change), recent and running
- * ones every night. Events on now or in the next two days are also watched, so the fast loop keeps
- * them current during the day. Stops after config.regionEventsMinutes; the rest follow tomorrow.
+ * Loads every event of the season, everywhere, not only ours: our region first, then the rest,
+ * nearest to today first. Finished events are read once after they end; upcoming ones are
+ * refreshed weekly (team lists change), recent and running ones every night. Region events on now
+ * or in the next two days are also watched, so the fast loop keeps them current during the day
+ * (others are watched once someone opens them). Stops after `minutes`; the rest follow next time.
  */
-async function regionEvents(ctx, seasonEvents) {
-  const list = seasonEvents.filter(e => e.region === config.region && !ctx.events.some(x => x.id === e.id));
-  const deadline = Date.now() + config.regionEventsMinutes * 60e3;
-  let loaded = 0, current = 0, left = 0;
+async function seasonEventsLoad(ctx, seasonEvents, minutes) {
+  const t0 = Date.now(), near = e => Math.abs(ms(e.start) - t0);
+  const list = seasonEvents.filter(e => !ctx.events.some(x => x.id === e.id))
+    .sort((a, b) => (b.region === config.region) - (a.region === config.region) || near(a) - near(b));
+  const deadline = Date.now() + minutes * 60e3;
+  let loaded = 0, current = 0, left = 0, failed = 0, answered = Date.now();
   for (const part of chunk(list, 100)) {
     const docs = await db.getAll(...part.map(e => db.doc(`events/${e.id}`)), { fieldMask: ["updatedAt"] });
     for (const [i, e] of part.entries()) {
@@ -716,12 +720,15 @@ async function regionEvents(ctx, seasonEvents) {
       const fresh = at && start - Date.now() > config.quickDaysAhead * DAY && Date.now() - at < 7 * DAY;
       if (final || fresh) { current++; continue; }
       if (Date.now() > deadline) { left++; continue; }
+      // Lookups from the app still get answered while this runs.
+      if (Date.now() - answered > 2 * 60e3) { answered = Date.now(); await handleRequests(ctx).catch(err => console.log(`  requests: ${err.message}`)); }
       try { await syncEvent(e, { ours: false, ourNumber: ctx.team.number }); loaded++; }
-      catch (err) { console.log(`  region event ${e.sku}: ${err.message}`); if (/429|rate/i.test(err.message)) break; continue; }
-      if (start - Date.now() < 2 * DAY && Date.now() - end < config.quickDaysAfterEnd * DAY) await db.doc(`watch/${e.id}`).set({ end: e.end || null });
+      catch (err) { console.log(`  event ${e.sku}: ${err.message}`); failed++; if (/429|rate/i.test(err.message)) break; continue; }
+      if (e.region === config.region && start - Date.now() < 2 * DAY && Date.now() - end < config.quickDaysAfterEnd * DAY) await db.doc(`watch/${e.id}`).set({ end: e.end || null });
     }
   }
-  console.log(`Region events (${config.region}): ${loaded} loaded, ${current} already up to date${left ? `, ${left} left for tomorrow` : ""}`);
+  console.log(`Season events: ${loaded} loaded, ${current} already up to date${failed ? `, ${failed} failed` : ""}${left ? `, ${left} left for next time` : ""} (of ${list.length})`);
+  return left;
 }
 
 // Our autos live in the private robot repo, which runs this with AUTOS_FILE pointing at them.
@@ -763,6 +770,13 @@ if (MODE === "autos") await autos();
 else {
   if (!process.env.ROBOTEVENTS_TOKEN) throw new Error("ROBOTEVENTS_TOKEN is not set");
   if (MODE === "full") await full();
+  else if (MODE === "events") { // catch up on every event of the season, then the always-on loop carries on
+    const ctx = await context();
+    const seasonEvents = (await all("events", { season: [ctx.season.id] })).map(compactEvent);
+    // Not while one of our events is on: then the live loop (the next run) matters more.
+    if (ctx.events.some(e => liveNow(e, Date.now()))) console.log("One of our events is live; skipping the catch-up");
+    else await seasonEventsLoad(ctx, seasonEvents, config.allEventsCatchUpMinutes);
+  }
   else if (G.key === "override") await quick();
   else await handleRequests(await context()); // last season: nothing is live, just answer lookups
 }

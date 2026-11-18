@@ -23,5 +23,7 @@
   "queueMinutes": 5,
   "aiMonthlyUsd": 75,
   "aiSeasonNotesPerRun": 300,
-  "regionEventsMinutes": 30
+  "regionEventsMinutes": 30,
+  "allEventsMinutes": 90,
+  "allEventsCatchUpMinutes": 150
 }
